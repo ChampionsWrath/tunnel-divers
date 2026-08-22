@@ -22,6 +22,22 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 8) — roster now 11 games
+- **Ghost Grabbers** (`games/ghost.js`): 3×3 room house, beam-cone capture (5s),
+  captured ghosts → assistant hunters w/ minimap pings; giggle+glimpse hints;
+  darkness = offscreen mask canvas. v1 = scored hunter runs (bots as ghosts);
+  TRUE asymmetric hunter-vs-ghosts online = server phase (Sam's original spec).
+- **Grid N' Greed** (`games/greed.js`): shared 5×5 push-your-luck vault,
+  $25-$1000 + monster, persistent reveals (memory), reshuffle on monster,
+  BANK button/Space, 3 turns each, bot greed personalities, odds readout.
+- **Floor is Lava** (`games/lava.js`): 4-color tile grid over lava, safe-color
+  calls w/ shrinking timers, dash-shoving (crown physics), safe tiles 6→1,
+  elimination placements, practice = respawn.
+- Board Game gauntlet = 5 random picks of the 11 now.
+- Also this round: Home Run follow-cam (ocean/boat → clouds/birds → space/aliens,
+  EXPERIMENTAL, old version at git 13c1201), trivia bank v2 (14×8 pub-quiz).
+- imports ?v=8. Deployed.
+
 ## Session 2026-08-22 (round 6) — roster now 8 games
 - Fixed swipe-mode taps: quick still press (<250ms/<12px) fires taps[0] on
   release (ready screens + Stack drops were dead on phones in swipe mode).
