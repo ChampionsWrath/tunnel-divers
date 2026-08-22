@@ -7,6 +7,16 @@
 ## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
 ## export and to honor `ctx.practice` (no timer, no scoring, no end()).
 
+## Session 2026-08-22 (round 5) — tilt pipeline v2
+- input.js tiltXY: 14Hz low-pass on sensor, 1.5° deadzone, ~16.5° full deflection,
+  pow-1.3 easing. Orientation is PLAYER-CHOSEN via picker on every ready-up card
+  (shown when touch + tilt; auto-defaults from window aspect); landscape rotation
+  direction detected from gamma sign at calibration — screen.orientation is never
+  trusted (home-screen PWAs misreport it).
+- Fixed: Bottle Blasters crashed rendering the countdown (cans undefined pre-startRun).
+- ⚠ RULE: main.js imports carry `?v=N` — BUMP THE VERSION whenever you edit any
+  imported module, or stale caches (preview pane, phone PWAs) keep old code.
+
 ## Session 2026-08-22 (round 4) — roster now 6 games
 - **Bottle Blasters** (`games/blast.js`): farm skeet shoot, tap/click = shoot
   (reticle at pointer, 0.22s fire cooldown). MP: shared seeded can stream,
