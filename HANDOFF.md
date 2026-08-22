@@ -74,11 +74,14 @@ never touches network). Supabase free tier later for accounts/coins.
 - NOT done: deploy to GitHub Pages (needs Sam's gh login), cosmetics in arcade (standalone TD
   keeps them; arcade uses name+color), the actual board, owner-only mode lock.
 
-## Deploy (Sam runs once, ~5 min)
-1. Install GitHub CLI + `gh auth login`
-2. `cd "D:\Tunnel Divers"` then `gh repo create tunnel-divers --public --source=. --push`
-3. `gh api repos/{owner}/tunnel-divers/pages -X POST -f "source[branch]=main" -f "source[path]=/"`
-→ `https://<user>.github.io/tunnel-divers/arcade/` (tilt works — no iframe)
+## Deploy — LIVE on GitHub Pages (2026-08-22) ✅
+- Repo: https://github.com/ChampionsWrath/tunnel-divers (public, gh CLI authed locally)
+- **Arcade: https://championswrath.github.io/tunnel-divers/arcade/**
+- **Solo TD: https://championswrath.github.io/tunnel-divers/tunnel-divers.html**
+- Tilt works here (direct URL, no iframe). These are the canonical share links now.
+- To publish future changes: commit then `git push` (Pages rebuilds automatically, ~1 min).
+- LAN server (`python -m http.server 8137 --bind 0.0.0.0` in this folder) remains an option
+  for offline dev; the Claude artifact remains a dev preview only.
 
 ## What this is
 Falling tunnel-dodger arcade game (Rebel Assault II falcon-run feel, Gang Beasts tone).
