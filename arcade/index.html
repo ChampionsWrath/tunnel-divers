@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Divers Arcade</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕳️</text></svg>">
+<link rel="stylesheet" href="css/shell.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HOME -->
+<div class="screen show" id="scrHome">
+  <h1 class="bigTitle">DIVERS<br>ARCADE</h1>
+  <div class="tag">Minigames for people who fall down holes. 🕳️</div>
+  <input id="nameIn" class="txt" placeholder="your name" maxlength="12" autocomplete="off">
+  <div class="row">
+    <button class="btn" id="btnLocal">PARTY ▶</button>
+  </div>
+  <div class="row">
+    <button class="btn small ghostBtn" id="btnHost">🌐 HOST ROOM</button>
+    <button class="btn small ghostBtn" id="btnJoin">JOIN</button>
+    <input id="codeIn" class="txt code" placeholder="CODE" maxlength="4" autocomplete="off">
+  </div>
+  <div class="row">
+    <button class="btn tiny ghostBtn" id="btnSet">⚙️ SETTINGS</button>
+    <a class="btn tiny ghostBtn" href="../tunnel-divers.html" style="text-decoration:none">🕳️ SOLO TUNNEL DIVERS</a>
+  </div>
+  <div class="muted" id="netStatus"></div>
+</div>
+
+<!-- SETTINGS -->
+<div class="screen" id="scrSet">
+  <div class="panel">
+    <h2>⚙️ SETTINGS</h2>
+    <div class="secLbl">STEERING ON PHONE</div>
+    <div class="chips">
+      <button class="cchip" id="ctlTilt">📱 TILT</button>
+      <button class="cchip" id="ctlSwipe">👆 SWIPE</button>
+    </div>
+    <div class="muted" id="tiltStat" style="margin:6px 0 12px"></div>
+    <div class="secLbl">VOLUME — <span id="volMLbl"></span></div>
+    <input type="range" id="volMaster" class="slider" min="0" max="100" step="1">
+    <div class="secLbl">MUSIC — <span id="volMuLbl"></span></div>
+    <input type="range" id="volMusic" class="slider" min="0" max="100" step="1">
+    <div class="row" style="margin-top:12px"><button class="btn small" id="btnSetClose">DONE</button></div>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div class="screen" id="scrLobby">
+  <div class="panel wide">
+    <h2 id="lobbyTitle">PARTY LOBBY</h2>
+    <div class="muted" id="roomLine" style="text-align:center"></div>
+    <div class="secLbl">PLAYERS</div>
+    <div id="playerList"></div>
+    <div class="row" style="justify-content:flex-start;margin-top:6px">
+      <button class="btn tiny ghostBtn" id="btnAddLocal">+ LOCAL PLAYER</button>
+      <button class="btn tiny ghostBtn" id="btnAddBot">+ BOT</button>
+    </div>
+    <div class="secLbl" style="margin-top:14px">GAME MODE</div>
+    <div id="modeGrid"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="btnStart">START ▶</button>
+      <button class="btn small ghostBtn" id="btnLeave">LEAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="screen" id="scrResults">
+  <div class="panel">
+    <h2 id="resTitle">RESULTS</h2>
+    <div id="resList"></div>
+    <div id="standings"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="btnNext">NEXT ▶</button>
+      <button class="btn small ghostBtn" id="btnToLobby">LOBBY</button>
+    </div>
+  </div>
+</div>
+
+<!-- in-game chrome -->
+<button id="btnQuit" title="quit">✕</button>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
