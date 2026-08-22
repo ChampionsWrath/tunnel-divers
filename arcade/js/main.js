@@ -7,13 +7,15 @@ import { Net, makeRoomCode } from './net.js';
 import tunnel from './games/tunnel.js';
 import stack from './games/stack.js';
 import crown from './games/crown.js';
+import brain from './games/brain.js';
 
-const GAMES = { tunnel, stack, crown };
+const GAMES = { tunnel, stack, crown, brain };
 const MODES = [
   { id: 'party', name: 'Board Game', icon: '🎲', desc: 'All minigames, placement points, crown the champion. (Board coming soon — gauntlet rules for now.)' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
   { id: 'stack', name: stack.name, icon: stack.icon, desc: stack.desc },
   { id: 'crown', name: crown.name, icon: crown.icon, desc: crown.desc },
+  { id: 'brain', name: brain.name, icon: brain.icon, desc: brain.desc },
 ];
 
 const $ = id => document.getElementById(id);
@@ -191,7 +193,7 @@ function launch(mode, seed, fromNet) {
   const players = lobbyPlayers();
   if (mode === 'party') {
     const rng = mulberry32(seed);
-    const rounds = ['tunnel', 'stack', 'crown'].sort(() => rng() - 0.5);
+    const rounds = ['tunnel', 'stack', 'crown', 'brain'].sort(() => rng() - 0.5);
     S.gauntlet = { rounds, round: 0, pts: {}, seed, players };
     for (const p of players) S.gauntlet.pts[p.id] = 0;
     startGame(rounds[0], seed + 1, players);

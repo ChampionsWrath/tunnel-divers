@@ -13,7 +13,7 @@ export default {
     goal: 'Hold the crown as long as you can — most crown-time in 75s wins. The tower crumbles smaller as time runs out.',
     touch: 'Tilt / drag to move · TAP anywhere = DASH',
     keys: 'P1: WASD + SPACE to dash · P2: arrows + ENTER',
-    tip: 'DASH is a burst of speed — dodge, cut people off, or BONK the carrier to send the crown flying.',
+    tip: 'DASH to dodge, cut off, or BONK the carrier loose. Fresh carriers glow gold — they\'re protected for a moment, so run while you shine!',
   },
   create(ctx) { return new CrownGame(ctx); }
 };
@@ -40,7 +40,7 @@ class CrownGame {
         bot: base ? !!base.bot : true, isFill: !base,
         x: Math.cos(a) * 0.55, y: Math.sin(a) * 0.55,
         vx: 0, vy: 0, crownT: 0, dashCd: 0, dashT: 0, fx: 1, fy: 0,
-        wob: this.rng() * TAU, squash: 0, role: i % 3,
+        wob: this.rng() * TAU, squash: 0, role: i % 3, grabT: 0,
       });
     }
     this.crown = { holder: null, x: 0, y: 0, vx: 0, vy: 0, cd: 0 };
@@ -61,7 +61,7 @@ class CrownGame {
     } else if (p.k === 'crown' && this.ctx.net && !this.ctx.net.isHost) {
       this.crown.holder = p.h; this.crown.x = p.x; this.crown.y = p.y;
       this.crown.vx = p.vx; this.crown.vy = p.vy;
-      const q = this.ps.find(z => z.id === p.h); if (q) q.crownT = p.ht;
+      const q = this.ps.find(z => z.id === p.h); if (q) { q.crownT = p.ht; q.grabT = p.im || 0; }
     } else if (p.k === 'dash') {
       const q = this.ps.find(z => z.id === p.id);
       if (q && !q.local) this.doDash(q);
@@ -74,7 +74,7 @@ class CrownGame {
     const R = this.arenaR(), online = !!this.ctx.net && !this.practice, host = !online || this.ctx.net.isHost;
     const wallR = R - PR / 600;
     for (const p of this.ps) {
-      p.dashCd -= dt; p.dashT -= dt; p.wob += dt * 9; p.squash *= Math.exp(-8 * dt);
+      p.dashCd -= dt; p.dashT -= dt; p.grabT -= dt; p.wob += dt * 9; p.squash *= Math.exp(-8 * dt);
       if (p.local && !p.bot) {
         const inp = this.ctx.input(p.slot, dt);
         p.vx += inp.x * ACC * dt; p.vy += inp.y * ACC * dt;
@@ -121,15 +121,24 @@ class CrownGame {
           a.vx -= nx * imp / 2 * aw; a.vy -= ny * imp / 2 * aw;
           b.vx += nx * imp / 2 * bw; b.vy += ny * imp / 2 * bw;
           const dashHit = a.dashT > 0 || b.dashT > 0;
-          // a dash touch ALWAYS pops the crown loose — dashing is the steal tool
+          // a dash touch pops the crown loose — unless the carrier's grab shield is up
           if (-rel > (dashHit ? 60 : 560)) {
             this.ctx.audio.sfx.thud(0.85); this.shakeUp(5);
             a.squash = 0.5; b.squash = 0.5;
             const holder = this.crown.holder;
             if (host && (holder === a.id || holder === b.id)) {
-              const vic = holder === a.id ? a : b;
-              this.launchCrown(vic);
-              this.pop('CROWN LOOSE!', vic.x, vic.y - 0.06, '#ffd23f');
+              const vic = holder === a.id ? a : b, atk = holder === a.id ? b : a;
+              if (vic.grabT > 0) {
+                // shield bounce: the would-be thief gets flung
+                const bn = Math.hypot(atk.x - vic.x, atk.y - vic.y) || 1;
+                atk.vx += (atk.x - vic.x) / bn * 780; atk.vy += (atk.y - vic.y) / bn * 780;
+                atk.squash = 0.7;
+                this.ctx.audio.sfx.shield();
+                this.pop('🛡 PROTECTED!', vic.x, vic.y - 0.07, '#ffd23f');
+              } else {
+                this.launchCrown(vic);
+                this.pop('CROWN LOOSE!', vic.x, vic.y - 0.06, '#ffd23f');
+              }
             } else if (dashHit) this.pop('BONK!', (a.x + b.x) / 2, (a.y + b.y) / 2 - 0.04, '#ffeccf');
           }
         }
@@ -154,7 +163,8 @@ class CrownGame {
         }
         if (c.cd <= 0) for (const p of this.ps) {
           if (Math.hypot(p.x - c.x, p.y - c.y) < (PR + 16) / 600) {
-            c.holder = p.id; c.vx = c.vy = 0; this.ctx.audio.sfx.grab();
+            c.holder = p.id; c.vx = c.vy = 0; p.grabT = 2.5;  // grab shield
+            this.ctx.audio.sfx.grab();
             this.pop('👑 ' + p.name + '!', p.x, p.y - 0.07, p.color); break;
           }
         }
@@ -164,7 +174,7 @@ class CrownGame {
         if (this.netAcc > 0.09) {
           this.netAcc = 0;
           const h = this.ps.find(p => p.id === c.holder);
-          this.ctx.net.send('g', { k: 'crown', h: c.holder, x: c.x, y: c.y, vx: c.vx, vy: c.vy, ht: h ? h.crownT : 0 });
+          this.ctx.net.send('g', { k: 'crown', h: c.holder, x: c.x, y: c.y, vx: c.vx, vy: c.vy, ht: h ? h.crownT : 0, im: h ? h.grabT : 0 });
           for (const p of this.ps) if (p.isFill)
             this.ctx.net.send('g', { k: 'pos', id: p.id, x: p.x, y: p.y, vx: p.vx, vy: p.vy });
         }
@@ -182,7 +192,8 @@ class CrownGame {
     if (!this.practice && this.t >= T_LIMIT) this.finish();
   }
   doDash(p) {
-    p.dashCd = DASH_CD; p.dashT = 0.35;
+    p.dashCd = p.bot ? DASH_CD * 1.8 : DASH_CD;   // bots lunge less often than humans
+    p.dashT = 0.35;
     p.vx += p.fx * 1150; p.vy += p.fy * 1150;
     this.ctx.audio.sfx.dash();
   }
@@ -228,7 +239,7 @@ class CrownGame {
         }
         // lunge-dash whenever the carrier is in range and we're facing the intercept —
         // this is how bots close the last gap a pursuit curve never closes
-        if (p.dashCd <= 0 && dist < 0.34) {
+        if (p.dashCd <= 0 && dist < 0.34 && h.grabT <= 0.3) {  // don't waste lunges on a shield
           const ang = Math.atan2(ty - p.y, tx - p.x), face = Math.atan2(p.fy, p.fx);
           const dA = Math.abs(Math.atan2(Math.sin(ang - face), Math.cos(ang - face)));
           if (dA < 0.7) this.doDash(p);
@@ -349,7 +360,15 @@ class CrownGame {
       g.beginPath(); g.arc(-6 + ex * 1.4, -3 + ey * 1.4, 2.4, 0, TAU); g.fill();
       g.beginPath(); g.arc(6 + ex * 1.4, -3 + ey * 1.4, 2.4, 0, TAU); g.fill();
       g.beginPath(); g.arc(0, 6, 3 + sp * 3, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke();
-      if (c.holder === p.id) this.drawCrown(g, 0, -PR - 12, 1);
+      if (c.holder === p.id) {
+        this.drawCrown(g, 0, -PR - 12, 1);
+        if (p.grabT > 0) {   // golden grab shield, fading out
+          g.globalAlpha = Math.min(1, p.grabT) * (0.65 + Math.sin(this.t * 9) * 0.25);
+          g.strokeStyle = '#ffd23f'; g.lineWidth = 4;
+          g.beginPath(); g.arc(0, 0, PR + 9, 0, TAU); g.stroke();
+          g.globalAlpha = 1;
+        }
+      }
       g.restore();
       g.font = '800 12px system-ui'; g.textAlign = 'center';
       g.fillStyle = 'rgba(10,8,4,0.7)'; g.fillText(p.name, px + 1, py - PR - (c.holder === p.id ? 30 : 12) + 1);
