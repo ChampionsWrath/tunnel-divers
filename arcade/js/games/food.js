@@ -2,6 +2,7 @@
 // Serve every item on a table's order to complete it. Most tables served in 75s wins.
 // Solo: the clock drains — every serve adds time, RUSH orders add a lot. Keep up!
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
+import { drawDiverTop } from '../character.js';
 
 const T_LIMIT = 75, SOLO_START = 40;
 const ACC = 330, DRAG = 3.1, VMAX = 118, PRr = 4.4;   // virtual stage 100 x 100
@@ -283,28 +284,16 @@ class FoodGame {
       }
       return;
     }
-    // player (little server on skates)
+    // player: the diver in a paper server hat
     const px2 = mx(this.px), py2 = my(this.py), pr2 = S * PRr * 1.15;
     const spd = Math.hypot(this.vx, this.vy) / VMAX;
     g.fillStyle = 'rgba(0,0,0,0.35)';
     g.beginPath(); g.ellipse(px2, py2 + pr2 * 0.8, pr2 * 0.9, pr2 * 0.4, 0, 0, TAU); g.fill();
-    g.save(); g.translate(px2, py2);
-    g.rotate(clamp(this.vx / VMAX, -1, 1) * 0.18);
-    g.fillStyle = this.runner.color; g.strokeStyle = '#14100a'; g.lineWidth = 3;
-    g.beginPath(); g.arc(0, 0, pr2, 0, TAU); g.fill(); g.stroke();
-    // paper hat
-    g.fillStyle = '#fff';
-    g.beginPath(); g.moveTo(-pr2 * 0.7, -pr2 * 0.7); g.lineTo(0, -pr2 * 1.5); g.lineTo(pr2 * 0.7, -pr2 * 0.7);
-    g.closePath(); g.fill(); g.stroke();
-    const ex = this.vx / VMAX * 4, ey = this.vy / VMAX * 4;
-    g.fillStyle = '#fff';
-    g.beginPath(); g.arc(-5 + ex, -2 + ey, 4.2, 0, TAU); g.fill();
-    g.beginPath(); g.arc(5 + ex, -2 + ey, 4.2, 0, TAU); g.fill();
-    g.fillStyle = '#14100a';
-    g.beginPath(); g.arc(-5 + ex * 1.3, -2 + ey * 1.3, 2, 0, TAU); g.fill();
-    g.beginPath(); g.arc(5 + ex * 1.3, -2 + ey * 1.3, 2, 0, TAU); g.fill();
-    g.beginPath(); g.arc(0, 5, 2.5 + spd * 2.5, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
-    g.restore();
+    drawDiverTop(g, {
+      x: px2, y: py2, r: pr2, color: this.runner.color, t: this.tt,
+      vx: this.vx, vy: this.vy, speedNorm: spd,
+      rot: clamp(this.vx / VMAX, -1, 1) * 0.18, hat: 'paper',
+    });
     // carried item floats above head
     if (this.carry !== null) {
       g.font = Math.round(S * 7.5) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';

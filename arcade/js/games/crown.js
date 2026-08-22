@@ -2,6 +2,7 @@
 // Walls are bouncy barriers; a knocked crown rockets off and ricochets — chase it.
 // Holder is slower but heavier (knockback-resistant). Bots fill to 4.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
+import { drawDiverTop } from '../character.js';
 
 const T_LIMIT = 75, ACC = 2300, DRAG = 3.0, VMAX = 640, DASH_CD = 1.2, PR = 22;
 const HALF = Math.PI / 2;
@@ -340,36 +341,20 @@ class CrownGame {
       }
       g.fillStyle = 'rgba(0,0,0,0.4)';
       g.beginPath(); g.ellipse(px, py + PR * 0.72, PR * 0.9, PR * 0.4, 0, 0, TAU); g.fill();
-      g.save(); g.translate(px, py);
-      g.rotate(Math.atan2(p.fy, p.fx) * 0.15 * sp);
-      const sq = 1 + p.squash * 0.35;
-      g.scale(sq, 1 / sq);
-      g.lineCap = 'round'; g.strokeStyle = p.color; g.lineWidth = 6;
-      for (let l = 0; l < 4; l++) {
-        const a = l * HALF + Math.sin(p.wob + l) * 0.4 * (0.3 + sp);
-        g.beginPath(); g.moveTo(0, 0);
-        g.lineTo(Math.cos(a) * PR * 1.15, Math.sin(a) * PR * 1.15); g.stroke();
-      }
-      g.fillStyle = p.color; g.strokeStyle = '#14100a'; g.lineWidth = 3;
-      g.beginPath(); g.arc(0, 0, PR * (1 + sp * 0.08), 0, TAU); g.fill(); g.stroke();
-      const ex = p.fx * 5, ey = p.fy * 5;
-      g.fillStyle = '#fff';
-      g.beginPath(); g.arc(-6 + ex, -3 + ey, 5, 0, TAU); g.fill();
-      g.beginPath(); g.arc(6 + ex, -3 + ey, 5, 0, TAU); g.fill();
-      g.fillStyle = '#14100a';
-      g.beginPath(); g.arc(-6 + ex * 1.4, -3 + ey * 1.4, 2.4, 0, TAU); g.fill();
-      g.beginPath(); g.arc(6 + ex * 1.4, -3 + ey * 1.4, 2.4, 0, TAU); g.fill();
-      g.beginPath(); g.arc(0, 6, 3 + sp * 3, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke();
+      drawDiverTop(g, {
+        x: px, y: py, r: PR, color: p.color, t: p.wob / 9,
+        vx: p.vx, vy: p.vy, speedNorm: sp, squash: p.squash,
+        rot: Math.atan2(p.fy, p.fx) * 0.15 * sp,
+      });
       if (c.holder === p.id) {
-        this.drawCrown(g, 0, -PR - 12, 1);
+        this.drawCrown(g, px, py - PR - 12, 1);
         if (p.grabT > 0) {   // golden grab shield, fading out
           g.globalAlpha = Math.min(1, p.grabT) * (0.65 + Math.sin(this.t * 9) * 0.25);
           g.strokeStyle = '#ffd23f'; g.lineWidth = 4;
-          g.beginPath(); g.arc(0, 0, PR + 9, 0, TAU); g.stroke();
+          g.beginPath(); g.arc(px, py, PR + 9, 0, TAU); g.stroke();
           g.globalAlpha = 1;
         }
       }
-      g.restore();
       g.font = '800 12px system-ui'; g.textAlign = 'center';
       g.fillStyle = 'rgba(10,8,4,0.7)'; g.fillText(p.name, px + 1, py - PR - (c.holder === p.id ? 30 : 12) + 1);
       g.fillStyle = p.color; g.fillText(p.name, px, py - PR - (c.holder === p.id ? 30 : 12));
