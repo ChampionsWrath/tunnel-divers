@@ -7,13 +7,13 @@ const T_LIMIT = 75, ACC = 2300, DRAG = 3.0, VMAX = 640, DASH_CD = 1.2, PR = 22;
 const HALF = Math.PI / 2;
 
 export default {
-  id: 'crown', name: 'Crown Steal', icon: '👑',
-  desc: 'Hold the crown longest. DASH people to knock it loose.',
+  id: 'crown', name: 'Crown Carriers', icon: '👑',
+  desc: 'A stone tower over lava. Hold the crown longest.',
   howto: {
-    goal: 'Hold the crown as long as you can — most crown-time in 75s wins.',
+    goal: 'Hold the crown as long as you can — most crown-time in 75s wins. The tower crumbles smaller as time runs out.',
     touch: 'Tilt / drag to move · TAP anywhere = DASH',
     keys: 'P1: WASD + SPACE to dash · P2: arrows + ENTER',
-    tip: 'DASH into the crown holder to send the crown flying. The holder is slow and heavy — gang up!',
+    tip: 'DASH is a burst of speed — dodge, cut people off, or BONK the carrier to send the crown flying.',
   },
   create(ctx) { return new CrownGame(ctx); }
 };
@@ -40,11 +40,11 @@ class CrownGame {
         bot: base ? !!base.bot : true, isFill: !base,
         x: Math.cos(a) * 0.55, y: Math.sin(a) * 0.55,
         vx: 0, vy: 0, crownT: 0, dashCd: 0, dashT: 0, fx: 1, fy: 0,
-        wob: this.rng() * TAU, squash: 0,
+        wob: this.rng() * TAU, squash: 0, role: i % 3,
       });
     }
     this.crown = { holder: null, x: 0, y: 0, vx: 0, vy: 0, cd: 0 };
-    this.banner(this.practice ? 'PRACTICE — TRY A DASH!' : 'GRAB THE CROWN!', '#ffd23f', 1.8);
+    this.banner(this.practice ? 'PRACTICE — TRY A DASH!' : 'CARRY THE CROWN!', '#ffd23f', 1.8);
     if (ctx.onNet) ctx.onNet((t, p, from) => this.onNet(t, p, from));
     this.netAcc = 0;
   }
@@ -87,7 +87,9 @@ class CrownGame {
         continue;
       }
       const dr = Math.exp(-DRAG * dt); p.vx *= dr; p.vy *= dr;
-      const sp = Math.hypot(p.vx, p.vy), lim = VMAX * (this.crown.holder === p.id ? 0.78 : 1);
+      // dash breaks the speed limit — a real burst for dodging or closing gaps
+      const sp = Math.hypot(p.vx, p.vy),
+        lim = VMAX * (this.crown.holder === p.id ? 0.78 : 1) * (p.dashT > 0 ? 2.1 : 1);
       if (sp > lim) { p.vx *= lim / sp; p.vy *= lim / sp; }
       if (sp > 30) { p.fx = p.vx / sp; p.fy = p.vy / sp; }
       p.x += p.vx * dt / 600; p.y += p.vy * dt / 600;
@@ -119,7 +121,8 @@ class CrownGame {
           a.vx -= nx * imp / 2 * aw; a.vy -= ny * imp / 2 * aw;
           b.vx += nx * imp / 2 * bw; b.vy += ny * imp / 2 * bw;
           const dashHit = a.dashT > 0 || b.dashT > 0;
-          if (-rel > (dashHit ? 320 : 560)) {
+          // a dash touch ALWAYS pops the crown loose — dashing is the steal tool
+          if (-rel > (dashHit ? 60 : 560)) {
             this.ctx.audio.sfx.thud(0.85); this.shakeUp(5);
             a.squash = 0.5; b.squash = 0.5;
             const holder = this.crown.holder;
@@ -180,7 +183,7 @@ class CrownGame {
   }
   doDash(p) {
     p.dashCd = DASH_CD; p.dashT = 0.35;
-    p.vx += p.fx * 950; p.vy += p.fy * 950;
+    p.vx += p.fx * 1150; p.vy += p.fy * 1150;
     this.ctx.audio.sfx.dash();
   }
   launchCrown(vic) {
@@ -195,22 +198,52 @@ class CrownGame {
     const c = this.crown;
     let tx, ty;
     if (c.holder === p.id) {
-      let fx = 0, fy = 0;
+      // carrier: run from the nearest threat, stay on the tower, panic-dash away
+      let fx = 0, fy = 0, nearest = 1e9;
       for (const q of this.ps) if (q !== p) {
         const d = Math.hypot(p.x - q.x, p.y - q.y) + 0.01;
+        nearest = Math.min(nearest, d);
         fx += (p.x - q.x) / d / d; fy += (p.y - q.y) / d / d;
       }
       const cd = Math.hypot(p.x, p.y);
       tx = p.x + fx * 0.05 - p.x * (cd > R * 0.72 ? 0.5 : 0);
       ty = p.y + fy * 0.05 - p.y * (cd > R * 0.72 ? 0.5 : 0);
+      if (nearest < 0.15 && p.dashCd <= 0) this.doDash(p);
     } else if (c.holder) {
       const h = this.ps.find(q => q.id === c.holder);
-      tx = h ? h.x : 0; ty = h ? h.y : 0;
-      if (h && p.dashCd <= 0 && Math.hypot(p.x - h.x, p.y - h.y) < 0.16) this.doDash(p);
+      if (h) {
+        const dist = Math.hypot(p.x - h.x, p.y - h.y);
+        const lead = clamp(dist * 0.9, 0.12, 0.65);          // seconds of prediction
+        const hx = h.vx / 600, hy = h.vy / 600;              // holder velocity, arena units/s
+        if (p.role === 0) {                                   // INTERCEPTOR: aim where they'll be
+          tx = h.x + hx * lead; ty = h.y + hy * lead;
+        } else if (p.role === 1) {                            // FLANKER: swing wide to cut the arc
+          const n = Math.hypot(hx, hy) || 0.001;
+          const side = Math.sin(this.t * 0.6 + p.wob) > 0 ? 1 : -1;
+          tx = h.x + hx * lead * 1.7 + (-hy / n) * 0.28 * side;
+          ty = h.y + hy * lead * 1.7 + (hx / n) * 0.28 * side;
+        } else {                                              // AMBUSHER: lurk mid-tower, pounce
+          if (dist > 0.42) { tx = h.x * 0.35; ty = h.y * 0.35; }
+          else { tx = h.x + hx * 0.2; ty = h.y + hy * 0.2; }
+        }
+        // lunge-dash whenever the carrier is in range and we're facing the intercept —
+        // this is how bots close the last gap a pursuit curve never closes
+        if (p.dashCd <= 0 && dist < 0.34) {
+          const ang = Math.atan2(ty - p.y, tx - p.x), face = Math.atan2(p.fy, p.fx);
+          const dA = Math.abs(Math.atan2(Math.sin(ang - face), Math.cos(ang - face)));
+          if (dA < 0.7) this.doDash(p);
+        }
+      } else { tx = 0; ty = 0; }
+      // spread out: don't share a lane with other chasers
+      for (const q of this.ps) if (q !== p && q.bot && c.holder !== q.id) {
+        const d = Math.hypot(p.x - q.x, p.y - q.y);
+        if (d < 0.12 && d > 0.001) { tx += (p.x - q.x) / d * 0.1; ty += (p.y - q.y) / d * 0.1; }
+      }
     } else { tx = c.x + c.vx * 0.25; ty = c.y + c.vy * 0.25; }
     const dx = tx - p.x + Math.sin(p.wob) * 0.03, dy = ty - p.y + Math.cos(p.wob * 1.3) * 0.03;
     const d = Math.hypot(dx, dy) || 1;
-    p.vx += dx / d * ACC * 0.85 * dt; p.vy += dy / d * ACC * 0.85 * dt;
+    const eff = c.holder && c.holder !== p.id ? 0.95 : 0.85;   // chasers hustle
+    p.vx += dx / d * ACC * eff * dt; p.vy += dy / d * ACC * eff * dt;
   }
   shakeUp(v) { this.shake = Math.max(this.shake, v); }
   finish() {
@@ -225,26 +258,60 @@ class CrownGame {
   render() {
     const g = this.ctx.g, { W, H } = this.ctx.dim;
     const S = Math.min(W, H) * 0.5 - 10, cx = W / 2, cy = H / 2 + 8;
-    const grd = g.createRadialGradient(cx, cy, 20, cx, cy, Math.max(W, H) * 0.7);
-    grd.addColorStop(0, '#241a38'); grd.addColorStop(1, '#0b0714');
-    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    const R = this.arenaR() * S;
+    // LAVA fills the world outside the tower — bright at the tower's edge
+    const lg = g.createRadialGradient(cx, cy, R, cx, cy, Math.max(W, H) * 0.8);
+    lg.addColorStop(0, '#ff7a2f'); lg.addColorStop(0.25, '#c93a12');
+    lg.addColorStop(1, '#3d0f04');
+    g.fillStyle = lg; g.fillRect(0, 0, W, H);
+    // slow lava blobs drifting around the tower
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * TAU + this.t * (0.07 + (i % 3) * 0.03) * (i % 2 ? 1 : -1);
+      const rr = R + 34 + Math.sin(this.t * 0.8 + i * 2.1) * 14 + (i % 3) * 26;
+      g.globalAlpha = 0.35 + 0.2 * Math.sin(this.t * 1.7 + i);
+      g.fillStyle = '#ffb03a';
+      g.beginPath(); g.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 10 + (i % 4) * 5, 0, TAU); g.fill();
+    }
+    g.globalAlpha = 1;
     g.save();
     if (this.shake > 0.3) g.translate((Math.random() * 2 - 1) * this.shake, (Math.random() * 2 - 1) * this.shake);
-    const R = this.arenaR() * S;
-    // wall rim
+    // stone parapet rim with crenellations
     const danger = !this.practice && this.t > T_LIMIT - 15;
-    g.fillStyle = '#101624';
-    g.beginPath(); g.arc(cx, cy, R + 14, 0, TAU); g.fill();
-    g.strokeStyle = danger && Math.floor(this.t * 4) % 2 ? '#ff5f5f' : '#5a7096';
-    g.lineWidth = 8;
-    g.beginPath(); g.arc(cx, cy, R + 10, 0, TAU); g.stroke();
-    // floor
-    g.fillStyle = '#2c3a52';
-    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
-    for (let i = 0; i < 8; i++) {
-      g.strokeStyle = 'rgba(90,112,150,0.35)'; g.lineWidth = 2;
-      g.beginPath(); g.arc(cx, cy, R * (i + 1) / 9, 0, TAU); g.stroke();
+    g.fillStyle = '#3d3935';
+    g.beginPath(); g.arc(cx, cy, R + 16, 0, TAU); g.fill();
+    g.fillStyle = danger && Math.floor(this.t * 4) % 2 ? '#7a4038' : '#57534e';
+    g.beginPath(); g.arc(cx, cy, R + 12, 0, TAU); g.fill();
+    for (let i = 0; i < 24; i++) {   // battlements
+      const a = i / 24 * TAU;
+      g.save(); g.translate(cx + Math.cos(a) * (R + 12), cy + Math.sin(a) * (R + 12));
+      g.rotate(a);
+      g.fillStyle = '#6e6a63'; g.fillRect(-3, -7, 9, 14);
+      g.restore();
     }
+    // stone floor: ring courses of offset brick seams
+    g.fillStyle = '#6b655e';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(40,36,32,0.5)'; g.lineWidth = 2;
+    for (let i = 1; i < 6; i++) {
+      const rr = R * i / 6;
+      g.beginPath(); g.arc(cx, cy, rr, 0, TAU); g.stroke();
+      const segs = 5 + i * 3, off = (i % 2) * 0.5;
+      for (let j2 = 0; j2 < segs; j2++) {
+        const a = (j2 + off) / segs * TAU;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+        g.lineTo(cx + Math.cos(a) * R * (i + 1) / 6, cy + Math.sin(a) * R * (i + 1) / 6);
+        g.stroke();
+      }
+    }
+    // center crest
+    g.strokeStyle = 'rgba(255,210,63,0.25)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, R / 6, 0, TAU); g.stroke();
+    // warm glow bleeding onto the stone from the lava
+    const eg = g.createRadialGradient(cx, cy, R * 0.55, cx, cy, R + 4);
+    eg.addColorStop(0, 'rgba(255,122,47,0)'); eg.addColorStop(1, 'rgba(255,122,47,0.22)');
+    g.fillStyle = eg;
+    g.beginPath(); g.arc(cx, cy, R + 4, 0, TAU); g.fill();
     // crown on the loose
     const c = this.crown;
     if (!c.holder) this.drawCrown(g, cx + c.x * S, cy + c.y * S - 8 - Math.sin(this.t * 4) * 4, 1.25);

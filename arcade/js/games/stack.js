@@ -84,8 +84,10 @@ class StackGame {
       const isHost = !this.ctx.net || this.ctx.net.isHost;
       let dropX = null, mine = false;
       if (p.local && !p.bot) {
+        // polling every frame also BURNS taps buffered during other turns;
+        // the stateT gate stops pre-pressed drops from firing instantly
         const inp = this.ctx.input(p.slot, dt);
-        if (inp.act) { dropX = this.craneX(W); mine = true; }
+        if (inp.act && this.stateT > 0.25) { dropX = this.craneX(W); mine = true; }
       } else if (p.bot && isHost) {
         // bots run on the host only (frame-rate-dependent RNG would diverge otherwise)
         const err = 30 + this.pieceNo * 4.5;
