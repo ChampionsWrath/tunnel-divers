@@ -38,17 +38,36 @@ export function tiltStatus() {
     return 'Tap START once to trigger the iOS motion prompt.';
   return 'No tilt sensor on this device — swipe will be used.';
 }
-function tiltXY() {
-  if (!tilt0) tilt0 = { g: tg, b: tb };
-  const ang = (screen.orientation && screen.orientation.angle != null) ?
-    screen.orientation.angle : (window.orientation || 0);
-  const dg = tg - tilt0.g, db = tb - tilt0.b;
+/* Orientation is PLAYER-CHOSEN (browsers embedded/home-screen apps misreport
+   rotation). For landscape, which WAY the phone was rotated is read from
+   gravity at calibration: a comfortable landscape grip leaves gamma strongly
+   signed, and the sign tells left- from right-rotation. */
+let tiltOrient = 'portrait';   // 'portrait' | 'landscape'
+export function setTiltOrient(v) { tiltOrient = v; }
+export function getTiltOrient() { return tiltOrient; }
+let ftg = 0, ftb = 0;
+function tiltXY(dt) {
+  if (!tilt0) {
+    tilt0 = { g: tg, b: tb, landDir: tg < 0 ? 90 : 270 };
+    ftg = tg; ftb = tb;
+  }
+  // low-pass the sensor — kills the jitter that made steering feel scratchy
+  const k = Math.min(1, (dt || 0.016) * 14);
+  ftg += (tg - ftg) * k; ftb += (tb - ftb) * k;
+  const dg = ftg - tilt0.g, db = ftb - tilt0.b;
   let tx, ty;
-  if (ang === 90) { tx = db; ty = -dg; }
-  else if (ang === 270 || ang === -90) { tx = -db; ty = dg; }
-  else if (ang === 180) { tx = -dg; ty = -db; }
-  else { tx = dg; ty = db; }
-  return [clamp(tx / 20, -1, 1), clamp(ty / 20, -1, 1)];
+  if (tiltOrient === 'landscape') {
+    if (tilt0.landDir === 90) { tx = db; ty = -dg; }
+    else { tx = -db; ty = dg; }
+  } else { tx = dg; ty = db; }
+  // response curve: 1.5° deadzone, full tilt ~16.5°, eased for fine aim near center
+  const curve = v => {
+    const a = Math.abs(v);
+    if (a <= 1.5) return 0;
+    const n = Math.min(1, (a - 1.5) / 15);
+    return Math.sign(v) * Math.pow(n, 1.3);
+  };
+  return [curve(tx), curve(ty)];
 }
 
 /* touch — attach to the game canvas */
@@ -78,7 +97,7 @@ export function getInput(slot, dt) {
   if (slot === 0) {
     if (keys.KeyA) x -= 1; if (keys.KeyD) x += 1;
     if (keys.KeyW) y -= 1; if (keys.KeyS) y += 1;
-    if (ctl === 'tilt' && tiltOK) { const t = tiltXY(); x += t[0]; y += t[1]; }
+    if (ctl === 'tilt' && tiltOK) { const t = tiltXY(dt); x += t[0]; y += t[1]; }
     else if (pad.id !== null) {
       pad.ox += (pad.x - pad.ox) * Math.min(1, (dt || 0.016) * 1.2);
       pad.oy += (pad.y - pad.oy) * Math.min(1, (dt || 0.016) * 1.2);

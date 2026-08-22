@@ -53,6 +53,7 @@ class BlastGame {
     ctx.cv.addEventListener('pointerdown', this._pd);
     ctx.cv.addEventListener('pointermove', this._pm);
     this.pops = []; this.shards = []; this.flashes = [];
+    this.cans = []; this.score = 0; this.combo = 0; this.clock = 0;  // render-safe before startRun
     this.state = 'ready'; this.stateT = 0; this.tt = 0;
     this.nextRunner();
     if (this.practice) this.startRun();

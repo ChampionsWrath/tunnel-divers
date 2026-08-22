@@ -1,15 +1,16 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js';
-import * as audio from './audio.js';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus } from './input.js';
-import { Net, makeRoomCode } from './net.js';
-import tunnel from './games/tunnel.js';
-import stack from './games/stack.js';
-import crown from './games/crown.js';
-import brain from './games/brain.js';
-import blast from './games/blast.js';
-import food from './games/food.js';
+// bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=3';
+import * as audio from './audio.js?v=3';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=3';
+import { Net, makeRoomCode } from './net.js?v=3';
+import tunnel from './games/tunnel.js?v=3';
+import stack from './games/stack.js?v=3';
+import crown from './games/crown.js?v=3';
+import brain from './games/brain.js?v=3';
+import blast from './games/blast.js?v=3';
+import food from './games/food.js?v=3';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food };
 const MODES = [
@@ -231,7 +232,28 @@ function showIntro(game) {
   $('ipGoal').textContent = h.goal || game.desc;
   $('ipCtl').textContent = (touch ? (h.touch || '') : (h.keys || '')) + (h.tip ? ' — ' + h.tip : '');
   $('introPanel').style.display = 'block';
+  buildOrientPicker();
   updateIntroUI();
+}
+// tilt players declare how they're holding the phone before readying up
+function buildOrientPicker() {
+  const el = $('ipOrient');
+  const touch = 'ontouchstart' in window;
+  if (!touch || ctl !== 'tilt') { el.style.display = 'none'; return; }
+  setTiltOrient(dim.W > dim.H ? 'landscape' : 'portrait');   // sensible default
+  el.style.display = 'block';
+  const paint = () => {
+    const o = getTiltOrient();
+    el.innerHTML =
+      '<div class="muted" style="font-size:11px;letter-spacing:.1em;font-weight:800;margin-bottom:4px">HOLDING MY PHONE</div>' +
+      '<div class="chips" style="justify-content:center">' +
+      '<button class="cchip' + (o === 'portrait' ? ' sel' : '') + '" data-or="portrait">📱 PORTRAIT</button>' +
+      '<button class="cchip' + (o === 'landscape' ? ' sel' : '') + '" data-or="landscape">📱 LANDSCAPE (rotate now)</button></div>';
+    el.querySelectorAll('[data-or]').forEach(b => b.addEventListener('click', () => {
+      setTiltOrient(b.dataset.or); audio.sfx.ui(); paint();
+    }));
+  };
+  paint();
 }
 function updateIntroUI() {
   const row = $('ipReadyRow'); row.innerHTML = '';
@@ -400,4 +422,4 @@ function frame(ts) {
 requestAnimationFrame(frame);
 
 // debug hooks for automated testing
-window.ARC = { S, launch, startGame, lobbyPlayers, show, GAMES, dim };
+window.ARC = { S, launch, startGame, lobbyPlayers, show, GAMES, dim, setTiltOrient, getInput };
