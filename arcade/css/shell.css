@@ -92,6 +92,17 @@ input.txt.code { width: 84px; text-transform: uppercase; letter-spacing: .2em; }
 #standings { margin-top: 12px; }
 #standings .secLbl { margin-bottom: 4px; }
 
+#introPanel {
+  display: none; position: fixed; left: 50%; transform: translateX(-50%);
+  top: calc(12px + env(safe-area-inset-top)); z-index: 25;
+  width: min(420px, 92vw); pointer-events: auto; text-align: center;
+  background: rgba(16, 22, 36, 0.92); border: 3px solid #2a3450; border-radius: 16px;
+  padding: 12px 16px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+#introPanel .ipHead { font-size: 20px; font-weight: 900; color: #ffd23f; }
+#introPanel #ipGoal { font-size: 14px; font-weight: 700; margin-top: 4px; line-height: 1.35; }
+#introPanel #ipCtl { margin-top: 5px; font-size: 12.5px; line-height: 1.35; }
+
 #btnQuit {
   position: fixed; top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
   z-index: 30; width: 42px; height: 42px; border-radius: 12px; border: 3px solid #14100a;

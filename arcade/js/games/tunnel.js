@@ -23,8 +23,8 @@ const curY = d => (Math.cos(d * 9e-4) * 70 + Math.sin(d * 11e-4) * 40) * ramp(d)
 
 /* ---------------- world sim (one diver's run) ---------------- */
 class TunnelWorld {
-  constructor(seed, events) {
-    this.seed = seed >>> 0 || 1; this.ev = events || {};
+  constructor(seed, events, god) {
+    this.seed = seed >>> 0 || 1; this.ev = events || {}; this.god = !!god;
     this.hz = []; this.pk = []; this.nextChunk = 0; this.lastPattern = ''; this.chainAng = null;
     this.CURC = ZONES[0].pal; this.GML = 1; this.zone = 0; this.curZone = 0;
     this.d = 0; this.pd = 0; this.t = 0; this.fall = CFG.FALL0;
@@ -179,7 +179,8 @@ class TunnelWorld {
         if (dd < rr - 6) {
           if (this.shield) { this.shield = false; this.ifr = 0.9; if (this.ev.shieldPop) this.ev.shieldPop(); }
           else {
-            this.lives--; this.ifr = CFG.IFR;
+            if (!this.god) this.lives--;
+            this.ifr = CFG.IFR;
             const n = dd || 1; this.vx = -dx / n * 430; this.vy = -dy / n * 430;
             if (this.ev.hit) this.ev.hit();
             if (this.lives <= 0) { this.done = true; if (this.ev.dead) this.ev.dead(); }
@@ -200,7 +201,7 @@ class TunnelWorld {
     this.camY += (curY(this.d) + this.py * 0.25 - 70 - this.camY) * ct;
     this.roll += (clamp(-this.vx * 0.0004, -0.07, 0.07) - this.roll) * Math.min(1, dt * 6);
     this.focal += (CFG.FOCAL + 40 * clamp((this.fall - CFG.FALL0) / (CFG.FMAX - CFG.FALL0), 0, 1) - this.focal) * Math.min(1, dt * 3);
-    if (this.t >= T_LIMIT) this.done = true;
+    if (this.t >= T_LIMIT && !this.god) this.done = true;
   }
 }
 
@@ -230,6 +231,12 @@ function botInput(w, r, skill) {
 export default {
   id: 'tunnel', name: 'Tunnel Divers', icon: '🕳️',
   desc: '75 seconds. Same tunnel. Deepest diver wins.',
+  howto: {
+    goal: 'Fall down the tunnel for 75 seconds — dodge everything, grab coins. Depth + coins = score. 3 hits and your run ends early.',
+    touch: 'Tilt / drag to steer · hold a finger = dive faster',
+    keys: 'WASD / arrows to steer · hold SPACE = dive faster',
+    tip: 'Skimming close past hazards pays +50. Everyone gets the SAME tunnel — watch the ghosts.',
+  },
   create(ctx) { return new TunnelGame(ctx); }
 };
 
@@ -238,11 +245,12 @@ class TunnelGame {
     this.ctx = ctx; this.pops = []; this.shake = 0; this.hitFlash = 0;
     this.results = []; this.ghosts = [];   // {name,col,track,gi}
     this.acc = 0; this.tt = 0;
-    this.online = !!ctx.net;
+    this.practice = !!ctx.practice;
+    this.online = !!ctx.net && !this.practice;
     this.rng = mulberry32(ctx.seed ^ 0xBEEF);
     const locals = ctx.players.filter(p => p.local && !p.bot);
-    const bots = ctx.players.filter(p => p.bot);
-    this.queue = [...locals];              // hot-seat order
+    const bots = this.practice ? [] : ctx.players.filter(p => p.bot);
+    this.queue = this.practice ? [locals[0]] : [...locals];   // hot-seat order
     this.remotes = this.online ? ctx.players.filter(p => !p.local && !p.bot) : [];
     this.remoteLive = {};                  // id -> {d,x,y,score,done}
     // pre-sim bots to ghost tracks + scores
@@ -254,11 +262,12 @@ class TunnelGame {
       this.results.push({ id: b.id, score: w.score(), label: Math.floor(w.d / 10) + 'm', name: b.name, color: b.color });
       this.ghosts.push({ name: b.name, col: b.color, track: w.track, gi: 0 });
     }
-    if (ctx.net) ctx.net.onMsg = (t, p) => {
+    if (ctx.onNet) ctx.onNet((t, p) => {
       if (t === 'g' && p.k === 'pos') this.remoteLive[p.id] = p;
-    };
+    });
     this.state = 'ready'; this.stateT = 0;
     this.nextRunner();
+    if (this.practice) this.startRun();
   }
   nextRunner() {
     this.runner = this.queue.shift() || null;
@@ -277,7 +286,7 @@ class TunnelGame {
       wall: () => this.ctx.audio.sfx.wall(),
       zap: () => this.ctx.audio.sfx.zap(),
     };
-    this.world = new TunnelWorld(this.ctx.seed, evs);
+    this.world = new TunnelWorld(this.ctx.seed, evs, this.practice);
     for (const g of this.ghosts) g.gi = 0;
     this.state = 'run'; this.stateT = 0;
   }
@@ -523,9 +532,12 @@ class TunnelGame {
     g.fillStyle = '#ffeccf'; g.fillText('🪙 ' + w.coins, 14, 54);
     g.fillText('🧡'.repeat(Math.max(0, w.lives)), 14, 78);
     g.textAlign = 'center'; g.font = '900 24px system-ui';
-    const tl = Math.max(0, T_LIMIT - w.t);
-    g.fillStyle = tl < 10 ? '#ff5f5f' : '#ffeccf';
-    g.fillText(Math.ceil(tl) + '', W / 2, 32);
+    if (this.practice) { g.fillStyle = '#7dff6a'; g.fillText('PRACTICE', W / 2, 32); }
+    else {
+      const tl = Math.max(0, T_LIMIT - w.t);
+      g.fillStyle = tl < 10 ? '#ff5f5f' : '#ffeccf';
+      g.fillText(Math.ceil(tl) + '', W / 2, 32);
+    }
     // pops
     for (const p of this.pops) {
       const f = 1 - p.t / p.dur;

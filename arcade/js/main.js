@@ -38,6 +38,10 @@ const S = {
   inst: null,          // running game instance
   gauntlet: null,      // {rounds:[modeIds], round, pts:Map, seed}
   lastResults: null,
+  gameNet: null,       // active game's net message handler
+  pending: null,       // {gameId,seed,players} awaiting ready-up
+  readySet: {},        // playerId -> true during intro
+  countdown: 0,
 };
 $('nameIn').value = S.profile.name === 'DIVER' ? '' : S.profile.name;
 $('nameIn').addEventListener('change', () => {
@@ -146,7 +150,8 @@ async function goOnline(asHost) {
     if (t === 'mode') { S.mode = p.mode; if (S.screen === 'lobby') renderLobby(); }
     else if (t === 'start') launch(p.mode, p.seed, true);
     else if (t === 'next' && S.gauntlet) nextRound(true);
-    else if (S.inst && S.inst.constructor) { /* in-game messages are re-routed by games via net.onMsg */ }
+    else if (t === 'ready') { S.readySet[p.id] = true; updateIntroUI(); checkAllReady(); }
+    else if (S.gameNet) S.gameNet(t, p, from);
   };
   show('lobby'); renderLobby();
 }
@@ -195,19 +200,86 @@ function launch(mode, seed, fromNet) {
     startGame(mode, seed, players);
   }
 }
+/* Every minigame opens Mario Party-style: a live PRACTICE arena + how-to card;
+   all human players ready up, then a 3-2-1 countdown into the real game. */
 function startGame(gameId, seed, players) {
   const game = GAMES[gameId];
   calibrateTilt(); clearTouch();
   show('game');
+  S.pending = { gameId, seed: seed >>> 0, players };
+  S.readySet = {}; S.countdown = 0; S.gameNet = null;
   S.inst = game.create({
-    cv, g, dim, players, seed: seed >>> 0,
-    net: S.net, input: getInput,
+    cv, g, dim, players, seed: (seed ^ 0x5EED) >>> 0,
+    net: null, onNet: null, practice: true, input: getInput,
+    audio: { sfx: audio.sfx, setMusicIntensity: audio.setMusicIntensity },
+    end: () => { },
+  });
+  showIntro(game);
+}
+function humanPlayers() { return S.pending ? S.pending.players.filter(p => !p.bot) : []; }
+function showIntro(game) {
+  const h = game.howto || {};
+  const touch = 'ontouchstart' in window;
+  $('ipIcon').textContent = game.icon;
+  $('ipName').textContent = game.name.toUpperCase();
+  $('ipGoal').textContent = h.goal || game.desc;
+  $('ipCtl').textContent = (touch ? (h.touch || '') : (h.keys || '')) + (h.tip ? ' — ' + h.tip : '');
+  $('introPanel').style.display = 'block';
+  updateIntroUI();
+}
+function updateIntroUI() {
+  const row = $('ipReadyRow'); row.innerHTML = '';
+  for (const p of humanPlayers()) {
+    const ready = !!S.readySet[p.id];
+    if (p.local) {
+      const b = document.createElement('button');
+      b.className = 'btn small' + (ready ? ' ghostBtn' : '');
+      b.textContent = ready ? '✓ ' + p.name : (p.slot === 1 ? p.name + ' READY (ENTER)' : p.name + ' — READY?');
+      b.style.borderColor = p.color;
+      if (!ready) b.addEventListener('click', () => readyUp(p.id));
+      row.appendChild(b);
+    } else {
+      const s = document.createElement('span');
+      s.className = 'muted';
+      s.textContent = (ready ? '✓ ' : '… ') + p.name;
+      row.appendChild(s);
+    }
+  }
+}
+function readyUp(id) {
+  if (S.readySet[id]) return;
+  S.readySet[id] = true;
+  audio.sfx.ui();
+  if (S.net) S.net.send('ready', { id });
+  updateIntroUI(); checkAllReady();
+}
+addEventListener('keydown', e => {
+  if (!S.pending || $('introPanel').style.display === 'none') return;
+  if (e.target && e.target.tagName === 'INPUT') return;
+  const humans = humanPlayers();
+  if (e.code === 'Enter') { const p2 = humans.find(p => p.local && p.slot === 1); if (p2) readyUp(p2.id); }
+  if (e.code === 'KeyR') { const p1 = humans.find(p => p.local && p.slot === 0); if (p1) readyUp(p1.id); }
+});
+function checkAllReady() {
+  if (!S.pending) return;
+  if (!humanPlayers().every(p => S.readySet[p.id])) return;
+  // everyone's in — swap practice out for the real thing behind a countdown
+  $('introPanel').style.display = 'none';
+  if (S.inst) { S.inst.dispose(); S.inst = null; }
+  const { gameId, seed, players } = S.pending;
+  S.pending = null;
+  calibrateTilt(); clearTouch();
+  S.inst = GAMES[gameId].create({
+    cv, g, dim, players, seed,
+    net: S.net, onNet: fn => { S.gameNet = fn; }, input: getInput,
     audio: { sfx: audio.sfx, setMusicIntensity: audio.setMusicIntensity },
     end: results => onGameEnd(gameId, results),
   });
+  S.countdown = 3.5;
 }
 function onGameEnd(gameId, results) {
   if (S.inst) { S.inst.dispose(); S.inst = null; }
+  S.gameNet = null;
   const players = S.gauntlet ? S.gauntlet.players : lobbyPlayers();
   const known = new Set([...players.map(p => p.id), ...S.locals.map(p => p.id)]);
   const rows = results
@@ -279,7 +351,9 @@ $('btnToLobby').addEventListener('click', () => { audio.sfx.ui(); S.gauntlet = n
 $('btnQuit').addEventListener('click', () => {
   audio.sfx.ui();
   if (S.inst) { S.inst.dispose(); S.inst = null; }
-  S.gauntlet = null; show('lobby'); renderLobby();
+  S.gauntlet = null; S.pending = null; S.gameNet = null; S.countdown = 0;
+  $('introPanel').style.display = 'none';
+  show('lobby'); renderLobby();
 });
 
 /* ---------------- frame loop ---------------- */
@@ -290,8 +364,25 @@ function frame(ts) {
   let dt = (ts - last) / 1000; last = ts;
   if (dt > 0.05) dt = 0.05; if (dt < 0) dt = 0;
   if (S.inst && S.screen === 'game') {
-    S.inst.update(dt);
-    if (S.inst) S.inst.render();
+    if (S.countdown > 0) {
+      const prev = Math.ceil(S.countdown);
+      S.countdown -= dt;
+      const cur = Math.ceil(S.countdown);
+      if (cur !== prev && cur > 0) audio.sfx.ui();
+      if (S.countdown <= 0) audio.sfx.zone();
+      S.inst.render();
+      const n = Math.ceil(Math.max(0.01, S.countdown));
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = '900 ' + Math.round(90 * dim.V + 40) + 'px system-ui';
+      g.lineWidth = 8; g.strokeStyle = 'rgba(10,8,4,0.9)';
+      const label = S.countdown > 0.35 ? '' + n : 'GO!';
+      g.strokeText(label, dim.W / 2, dim.H * 0.42);
+      g.fillStyle = '#ffd23f'; g.fillText(label, dim.W / 2, dim.H * 0.42);
+      g.textBaseline = 'alphabetic';
+    } else {
+      S.inst.update(dt);
+      if (S.inst) S.inst.render();
+    }
   } else {
     // idle backdrop
     const grd = g.createRadialGradient(dim.W / 2, dim.H / 2, 10, dim.W / 2, dim.H / 2, Math.max(dim.W, dim.H) * 0.7);

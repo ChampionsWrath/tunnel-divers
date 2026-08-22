@@ -17,14 +17,22 @@ const PIECES = [
 export default {
   id: 'stack', name: 'Stack Attack', icon: '📦',
   desc: 'Take turns stacking junk. Topple the tower, you\'re out.',
+  howto: {
+    goal: 'One shared tower. Take turns dropping furniture on it — miss badly or topple it and you\'re OUT. Last stacker standing wins.',
+    touch: 'TAP anywhere to drop the piece',
+    keys: 'P1: SPACE to drop · P2: ENTER',
+    tip: 'Watch the lean meter up top — a PERFECT center drop calms the tower down.',
+  },
   create(ctx) { return new StackGame(ctx); }
 };
 
 class StackGame {
   constructor(ctx) {
     this.ctx = ctx;
+    this.practice = !!ctx.practice;
     this.rng = mulberry32(ctx.seed);
-    this.players = ctx.players.map(p => ({ ...p, alive: true, out: 0, misses: 0, height: 0 }));
+    const src = this.practice ? ctx.players.filter(p => p.local && !p.bot) : ctx.players;
+    this.players = src.map(p => ({ ...p, alive: true, out: 0, misses: 0, height: 0 }));
     this.solo = this.players.length === 1;
     this.stack = [];             // {x,y,w,h,c,rot,n}
     this.falling = null;         // piece in flight
@@ -41,7 +49,7 @@ class StackGame {
     this.newPiece();
     this.banner(this.curP().name + "'S TURN", this.curP().color, 1.4);
     this.remoteDrop = null;
-    if (ctx.net) ctx.net.onMsg = (t, p, from) => { if (t === 'g' && p.k === 'drop') this.remoteDrop = p.x; };
+    if (ctx.onNet) ctx.onNet((t, p) => { if (t === 'g' && p.k === 'drop') this.remoteDrop = p.x; });
   }
   curP() { return this.players[this.turn]; }
   banner(txt, col, dur) { this.pops.push({ txt, col: col || '#ffd23f', t: 0, dur: dur || 1, big: true }); }
@@ -68,7 +76,7 @@ class StackGame {
     for (let i = this.debris.length; i--;) {
       const d = this.debris[i];
       d.vy += 1400 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.vr * dt;
-      if (d.y - this.camY > H + 200) this.debris.splice(i, 1);
+      if (d.y + this.camY > H + 200) this.debris.splice(i, 1);
     }
     if (this.state === 'swing') {
       this.craneT += dt * this.craneSpeed;
@@ -85,8 +93,9 @@ class StackGame {
         if (Math.abs(this.craneX(W) - tx) < 14 + this.rng() * 22 && this.stateT > 0.6) { dropX = this.craneX(W); mine = true; }
       } else if (this.remoteDrop != null) { dropX = this.remoteDrop; this.remoteDrop = null; }
       if (dropX != null) {
-        if (mine && this.ctx.net) this.ctx.net.send('g', { k: 'drop', x: dropX });
-        this.falling = { x: dropX, y: this.camY - 60, w: this.piece.w, h: this.piece.h, c: this.piece.c, n: this.piece.n, vy: 0, rot: 0 };
+        if (mine && this.ctx.net && !this.practice) this.ctx.net.send('g', { k: 'drop', x: dropX });
+        // spawn at the crane in WORLD coords — must always be above the tower top
+        this.falling = { x: dropX, y: -this.camY + Math.min(110, this.ctx.dim.H * 0.15) + this.piece.h / 2, w: this.piece.w, h: this.piece.h, c: this.piece.c, n: this.piece.n, vy: 0, rot: 0 };
         this.state = 'fall'; this.stateT = 0;
         this.ctx.audio.sfx.drop();
       }
@@ -133,6 +142,7 @@ class StackGame {
   miss() {
     const p = this.curP();
     p.misses++;
+    if (this.practice) { this.state = 'settle'; this.stateT = 0; return; }
     if (this.solo) {
       if (p.misses >= 3) { this.state = 'done'; this.stateT = 0; this.banner('OUT OF PIECES!', '#ff5f5f', 1.6); }
       else { this.state = 'settle'; this.stateT = 0; }
@@ -151,6 +161,7 @@ class StackGame {
   }
   afterCollapse() {
     const p = this.curP();
+    if (this.practice) { this.nextTurn(); return; }
     if (this.solo) { this.state = 'done'; this.stateT = 0; }
     else this.eliminate(p, 'toppled the tower!');
   }
@@ -163,7 +174,7 @@ class StackGame {
     else this.nextTurn();
   }
   nextTurn() {
-    if (this.pieceNo >= 42) {
+    if (!this.practice && this.pieceNo >= 42) {
       this.state = 'done'; this.stateT = 0; this.finishByHeight = true;
       this.banner('CEILING! EVERYBODY WINS-ISH', '#ffd23f', 1.6);
       return;
@@ -194,8 +205,7 @@ class StackGame {
     g.fillStyle = grd; g.fillRect(0, 0, W, H);
     g.save();
     if (this.shake > 0.3) g.translate((Math.random() * 2 - 1) * this.shake, (Math.random() * 2 - 1) * this.shake);
-    g.translate(0, -(-this.camY));   // camY shifts world down as tower grows
-    g.translate(0, this.camY);
+    g.translate(0, this.camY);       // camY shifts the world down as the tower grows
     const groundY = H * 0.88;
     // ground
     g.fillStyle = '#2c3a52'; g.fillRect(-50, groundY, W + 100, H);
@@ -207,11 +217,11 @@ class StackGame {
       this.drawPiece(g, s.x + sway, s.y, s);
     }
     for (const d of this.debris) this.drawPiece(g, d.x, d.y, d);
-    // crane + dangling piece
+    // crane + dangling piece (world y just below the top of the visible screen)
     if (this.state === 'swing') {
-      const cx = this.craneX(W), cy = this.camY - 40 + Math.max(0, H * 0.12);
+      const cx = this.craneX(W), cy = -this.camY + Math.min(110, H * 0.15);
       g.strokeStyle = '#93a0bd'; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(cx, this.camY - 80); g.lineTo(cx, cy); g.stroke();
+      g.beginPath(); g.moveTo(cx, -this.camY - 20); g.lineTo(cx, cy); g.stroke();
       this.drawPiece(g, cx, cy + this.piece.h / 2, { ...this.piece, rot: Math.sin(this.craneT * 2) * 0.05 });
       // drop guide
       g.strokeStyle = 'rgba(255,210,63,0.25)'; g.setLineDash([6, 8]);
