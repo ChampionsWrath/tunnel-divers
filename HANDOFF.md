@@ -7,6 +7,21 @@
 ## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
 ## export and to honor `ctx.practice` (no timer, no scoring, no end()).
 
+## Session 2026-08-22 (round 7) — shared character + Home Run POV
+- **`arcade/js/character.js` — THE DIVER, the canonical player model** (matches
+  Tunnel Divers' look: player-color body, tan skin, dark goggle band, ice-blue
+  lenses, black outline). `drawDiverTop` (arenas: crown, food w/ hat:'paper')
+  and `drawDiverBack` (batting/standing). RULE: any minigame that shows the
+  player uses this module; reticle/cursor games (blast, brain, trivia) don't
+  show a model. This is the board-game avatar.
+- Home Run Heroes rewritten to batter's-eye POV (MLB The Show cam): pitch grows
+  toward camera (drift variance), full ballpark (3 curved crowd tiers, light
+  towers, jumbotron w/ live distance ticker, blue wall + yellow line, mow
+  stripes, batter's boxes), Flick Home Run scoring: crit stacks on
+  q>0.85&charge>0.88 (×1.7-3) and q>0.96&charge>0.97 (×2.6-6): milestones
+  HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
+- imports ?v=5. Deployed.
+
 ## Session 2026-08-22 (round 6) — roster now 8 games
 - Fixed swipe-mode taps: quick still press (<250ms/<12px) fires taps[0] on
   release (ready screens + Stack drops were dead on phones in swipe mode).
