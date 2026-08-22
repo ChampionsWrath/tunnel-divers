@@ -1,5 +1,24 @@
 # Tunnel Divers / Divers Arcade — Handoff
 
+## 📏 STANDING RULE (Sam, 2026-08-22): every minigame must open with a
+## Mario Party-style intro: live practice arena + how-to card + all humans
+## ready up + 3-2-1 countdown. This is implemented ONCE in the shell
+## (main.js startGame → practice instance w/ ctx.practice:true → checkAllReady →
+## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
+## export and to honor `ctx.practice` (no timer, no scoring, no end()).
+
+## Session 2026-08-22 (fixes after Sam's first playtest)
+- Stack Attack: camera bug fixed — crane/piece spawn were in mixed screen/world
+  coords so at height pieces spawned inside the tower; also a doubled camera
+  translate in render. All world-space now; spawn rides the visible screen top.
+- Crown Steal reworked per feedback: wider arena (S=0.5·min, shrink 1→0.62),
+  edge is a bouncy BARRIER (no fall-outs), knocked crown launches in a random
+  direction at high speed and ricochets off walls (chase it), holder is heavier
+  (0.45× knockback) and slower (0.78× max speed), dash got a hit-window
+  (0.35s, lower knock threshold), trail effect, and an on-screen DASH hint.
+- Games now use ctx.onNet(handler) instead of overwriting net.onMsg (main.js
+  routes 'g' messages to the active game; lobby msgs keep working after games).
+
 ## ⭐ Session 2026-08-22 (later): DIVERS ARCADE built (`arcade/`)
 Long-term plan (agreed): Mario Party-style platform. Web-first, **no build step** (plain ES
 modules — exFAT-safe, deploys anywhere), Capacitor→App Store / Tauri→Steam later.
