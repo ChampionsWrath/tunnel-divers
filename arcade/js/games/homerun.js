@@ -2,7 +2,7 @@
 // The pitch comes AT you; HOLD to charge, RELEASE at the plate. Great contact at
 // full charge doesn't just clear the wall — it leaves the stadium, the sky, Earth.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverBack } from '../character.js';
+import { drawBatter } from '../character.js';
 
 const PITCHES = 10;
 
@@ -13,7 +13,7 @@ export default {
     goal: PITCHES + ' pitches, batter\'s-eye view. HOLD to charge your swing, RELEASE right as the ball reaches the plate. Total distance wins — perfect contact at full charge can leave the stadium… and the atmosphere.',
     touch: 'HOLD a finger to charge · RELEASE to swing',
     keys: 'P1: hold SPACE · P2: hold ENTER',
-    tip: 'Power means nothing if you whiff the timing — watch the ball grow, not the meter.',
+    tip: 'The ball flies into the glowing ring at the plate — RELEASE the moment it fills the ring. Green ring = swing now!',
   },
   create(ctx) { return new HomerunGame(ctx); }
 };
@@ -73,7 +73,7 @@ class HomerunGame {
     this.pitchNo++;
     this.phase = 'windup'; this.phaseT = 0;
     this.charge = 0; this.swung = false;
-    this.travelT = 1.0 + this.rng() * 0.6;
+    this.travelT = 1.15 + this.rng() * 0.6;
     this.windupT = 0.7 + this.rng() * 0.5;
     this.pitchDrift = (this.rng() - 0.5) * 0.12;   // slight left/right movement
   }
@@ -116,7 +116,7 @@ class HomerunGame {
       if (released && !this.swung) {
         this.swung = true; this.swingT = this.tt;
         const err = Math.abs(f - 1);
-        const q = Math.max(0, 1 - err / 0.13);
+        const q = Math.max(0, 1 - err / 0.18);   // forgiving window — the ring cue makes it learnable
         if (q <= 0.1) {
           this.pop('WHIFF!', 50, 55, '#ff5f5f', 30);
           this.ctx.audio.sfx.whoosh();
@@ -298,12 +298,26 @@ class HomerunGame {
     g.lineCap = 'round'; g.lineWidth = 3.5 * s; g.strokeStyle = '#e0e4e8';
     g.beginPath(); g.moveTo(VX, moundY - 16 * s);
     g.lineTo(VX + 8 * s, moundY - 12 * s - wind * 16 * s); g.stroke();
-    // ---- the pitch: ball flies AT the camera ----
+    // ---- the SWING ZONE: a ring at the plate the pitch flies into.
+    //      The ball fills the ring exactly at the perfect swing moment. ----
+    const ringX = VX + this.pitchDrift * W, ringY = plateY - 46 * s, ringR = 22 * s;
+    if (this.phase === 'windup' || this.phase === 'throw') {
+      const f = this.phase === 'throw' ? this.phaseT / this.travelT : 0;
+      const inWindow = this.phase === 'throw' && Math.abs(f - 1) < 0.18;
+      g.lineWidth = inWindow ? 5 * s : 3 * s;
+      g.strokeStyle = inWindow ? '#7dff6a' : 'rgba(255,236,207,0.55)';
+      if (inWindow) { g.globalAlpha = 0.75 + Math.sin(this.tt * 30) * 0.25; }
+      g.beginPath(); g.arc(ringX, ringY, ringR, 0, TAU); g.stroke();
+      g.globalAlpha = 0.25;
+      g.beginPath(); g.arc(ringX, ringY, ringR * 0.72, 0, TAU); g.stroke();
+      g.globalAlpha = 1;
+    }
+    // ---- the pitch: ball flies AT the camera, into the ring ----
     if (this.phase === 'throw' && !this.swung) {
       const f = Math.min(1.12, this.phaseT / this.travelT);
-      const bx = VX + this.pitchDrift * W * f;
-      const by = lerp(moundY - 20 * s, plateY - 46 * s, Math.pow(f, 1.25));
-      const br = lerp(3.5, 20, Math.pow(f, 1.6)) * s;
+      const bx = lerp(VX, ringX, f);
+      const by = lerp(moundY - 20 * s, ringY, Math.pow(f, 1.25));
+      const br = lerp(3.5, ringR / s * 0.92, Math.pow(f, 1.45)) * s;
       g.fillStyle = '#f2ece2'; g.strokeStyle = '#c0392b'; g.lineWidth = Math.max(1.5, br * 0.14);
       g.beginPath(); g.arc(bx, by, br, 0, TAU); g.fill();
       g.beginPath(); g.arc(bx, by, br * 0.72, -0.6, 1.2); g.stroke();
@@ -324,14 +338,21 @@ class HomerunGame {
       g.fillStyle = '#f2ece2';
       g.beginPath(); g.arc(bx, by, Math.max(1, br), 0, TAU); g.fill();
     }
-    // ---- the batter: our diver, from behind, bottom-left box ----
+    // ---- the batter: sideways in the box, real cut ----
     const swingAge = this.tt - this.swingT;
-    const batAngle = swingAge < 0.16 ? lerp(-2.3, 1.1, swingAge / 0.16) :
-      (this.phase === 'windup' || this.phase === 'throw') ? -2.1 - this.charge * 0.45 + Math.sin(this.tt * 10) * this.charge * 0.05 : -1.9;
-    drawDiverBack(g, {
-      x: VX - 52 * s, y: plateY - 34 * s, scale: 2.1 * s, color: this.runner.color,
-      t: this.tt, pose: 'bat', batAngle, crouch: this.charge * 0.4,
+    const swing = swingAge >= 0 && swingAge < 0.3 ? swingAge / 0.3 : null;
+    drawBatter(g, {
+      x: VX - 58 * s, y: plateY - 36 * s, scale: 2.2 * s, color: this.runner.color,
+      t: this.tt, charge: (this.phase === 'windup' || this.phase === 'throw') ? this.charge : 0,
+      swing,
     });
+    // swoosh arc at the moment of contact
+    if (swing != null && swing > 0.25 && swing < 0.75) {
+      g.globalAlpha = 1 - Math.abs(swing - 0.5) * 3;
+      g.strokeStyle = '#fff'; g.lineWidth = 5 * s; g.lineCap = 'round';
+      g.beginPath(); g.arc(VX - 50 * s, plateY - 46 * s, 52 * s, -0.9, 0.7); g.stroke();
+      g.globalAlpha = 1;
+    }
     // ---- power meter + hint ----
     const mw = Math.min(240, W * 0.5);
     g.fillStyle = 'rgba(20,26,40,0.75)'; g.fillRect(W / 2 - mw / 2, H - 40, mw, 15);

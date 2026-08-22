@@ -89,6 +89,73 @@ export function drawDiverBack(g, o) {
   g.restore();
 }
 
+/* side-profile batting stance (Home Run Heroes) — faces screen-right toward the plate.
+   o: {x, y, scale, color, t, charge: 0..1, swing: null | 0..1 (progress of the cut)} */
+export function drawBatter(g, o) {
+  const sw = o.swing;                      // null = waiting, 0..1 = mid-swing
+  const charge = o.charge || 0;
+  g.save(); g.translate(o.x, o.y); g.scale(o.scale, o.scale);
+  // hips coil back with charge, rotate through during the swing
+  const hipRot = sw == null ? -0.08 - charge * 0.14 : lerp2(-0.22, 0.34, sw);
+  const stride = sw == null ? 0 : Math.sin(Math.min(1, sw * 1.4) * Math.PI) * 4;
+  g.lineCap = 'round';
+  // legs: back leg (screen-left), front leg strides toward the pitcher
+  g.strokeStyle = '#2b6cb0'; g.lineWidth = 6;
+  g.beginPath(); g.moveTo(-4, 8); g.lineTo(-13, 26); g.stroke();
+  g.beginPath(); g.moveTo(4, 8); g.lineTo(14 + stride, 26); g.stroke();
+  g.save(); g.rotate(hipRot);
+  // torso (profile: narrower than the back view)
+  g.fillStyle = o.color; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  roundRect(g, -9, -10, 18, 22, 7); g.fill(); g.stroke();
+  // bat: grip point + angle animate through a real cut —
+  // cocked up behind the shoulder → level through the zone → wrapped follow-through
+  let batAng, gx, gy;
+  if (sw == null) {
+    batAng = -2.35 - charge * 0.35 + Math.sin((o.t || 0) * 9) * charge * 0.06;
+    gx = 3; gy = -12;
+  } else if (sw < 0.45) {                  // the cut: whip down and through
+    const f = sw / 0.45;
+    batAng = lerp2(-2.35, -0.05, easeIn(f));
+    gx = lerp2(3, 11, f); gy = lerp2(-12, -3, f);
+  } else {                                 // follow-through wraps around
+    const f = (sw - 0.45) / 0.55;
+    batAng = lerp2(-0.05, 1.75, easeOut(f));
+    gx = lerp2(11, 1, f); gy = lerp2(-3, -9, f);
+  }
+  // arms: both hands to the grip
+  g.strokeStyle = shade(o.color); g.lineWidth = 5.5;
+  g.beginPath(); g.moveTo(-6, -4); g.lineTo(gx - 1.5, gy + 1); g.stroke();
+  g.beginPath(); g.moveTo(6, -5); g.lineTo(gx + 1, gy); g.stroke();
+  // the bat: knob, thin handle, tapered barrel with a rounded tip
+  g.save(); g.translate(gx, gy); g.rotate(batAng);
+  g.fillStyle = '#d2a468'; g.strokeStyle = OUTLINE; g.lineWidth = 2.2;
+  g.beginPath();
+  g.moveTo(-2, 4);                          // knob side
+  g.lineTo(-1.7, -14);                      // handle
+  g.lineTo(-4.2, -34);                      // taper out
+  g.quadraticCurveTo(-4.6, -44, 0, -44.6);  // rounded tip
+  g.quadraticCurveTo(4.6, -44, 4.2, -34);
+  g.lineTo(1.7, -14);
+  g.lineTo(2, 4);
+  g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = '#8a5a2b';                  // knob
+  g.beginPath(); g.arc(0, 5, 3.2, 0, TAU); g.fill(); g.stroke();
+  g.restore();
+  // head in profile: goggle band + one lens facing the pitcher
+  g.fillStyle = SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  g.beginPath(); g.arc(2, -18, 10, 0, TAU); g.fill(); g.stroke();
+  g.fillStyle = GOGGLE; roundRect(g, -7, -22, 19, 4.5, 2); g.fill();
+  g.fillStyle = LENS;
+  g.beginPath(); g.arc(8.5, -19.8, 2.8, 0, TAU); g.fill();
+  g.fillStyle = OUTLINE;                    // determined little mouth
+  g.beginPath(); g.arc(9.5, -13.5, 1.4, 0, TAU); g.fill();
+  g.restore();
+  g.restore();
+}
+const lerp2 = (a, b, f) => a + (b - a) * f;
+const easeIn = f => f * f;
+const easeOut = f => 1 - (1 - f) * (1 - f);
+
 function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r);
