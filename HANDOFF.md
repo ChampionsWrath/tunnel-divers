@@ -7,6 +7,20 @@
 ## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
 ## export and to honor `ctx.practice` (no timer, no scoring, no end()).
 
+## Session 2026-08-22 (round 3)
+- **Crown Carriers grab shield**: picking up the crown grants 2.5s immunity
+  (gold pulsing ring); dash-thieves BOUNCE off a shielded carrier; bots lunge
+  1.8x slower and skip shielded targets. This is the anti-"instant drop" fix —
+  Sam explicitly didn't want multi-hit knocks.
+- **New minigame: Big Brain** (`games/brain.js`, id 'brain') — mental math,
+  steer onto the correct answer pad (4 corner pads, virtual 100x62 stage).
+  Correct = instant next question. MP = simple math (L1-3 mix) volume race,
+  75s, most correct wins; bots answer on precomputed seeded timelines; online
+  syncs scores at 0.5s. SOLO (exactly 1 player in lobby) = difficulty scales
+  L1→L8 every 2 correct, points = level, 3 strikes (wrong OR timeout) = out.
+  KEY RULE: must step off all pads before answers re-arm (prevents
+  standing-on-pad auto-answer). Gauntlet now runs all 4 games.
+
 ## Session 2026-08-22 (fixes after Sam's first playtest)
 - Stack Attack: camera bug fixed — crane/piece spawn were in mixed screen/world
   coords so at height pieces spawned inside the tower; also a doubled camera
