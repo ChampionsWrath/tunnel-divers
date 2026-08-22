@@ -1,4 +1,37 @@
-# Tunnel Divers — Handoff
+# Tunnel Divers / Divers Arcade — Handoff
+
+## ⭐ Session 2026-08-22 (later): DIVERS ARCADE built (`arcade/`)
+Long-term plan (agreed): Mario Party-style platform. Web-first, **no build step** (plain ES
+modules — exFAT-safe, deploys anywhere), Capacitor→App Store / Tauri→Steam later.
+Multiplayer: WebRTC P2P via Trystero (torrent signaling, $0, CDN-imported lazily — local play
+never touches network). Supabase free tier later for accounts/coins.
+
+- `arcade/index.html` + `css/shell.css` — shell screens (home/settings/lobby/results)
+- `arcade/js/`: `util` `audio` (sfx+music sequencer) `input` (WASD/arrows/touch/tilt, 2 local
+  slots) `net` (Net class, room codes, host flag) `main` (lobby, mode select, gauntlet, runner)
+- `arcade/js/games/`: minigame contract = `{id,name,icon,desc,create(ctx)}`;
+  ctx = `{cv,g,dim,players,seed,net,input,audio,end(results)}`
+  - **tunnel.js** — TD cut: 75s depth race, TunnelWorld class (full zone/pattern/creature port),
+    hot-seat turns w/ ghost replays, online live ghosts, bots pre-simulated headless (skill+lapses)
+  - **stack.js** — shared-tower crane stacking, turn-based, lean/topple, elimination,
+    solo=3-miss height chase, bots host-authoritative online, 42-piece ceiling tie
+  - **crown.js** — top-down shrinking arena, momentum+dash bumps, crown-time scoring,
+    fills to 4 with bots (host-authoritative online), 75s
+- **Modes**: Board Game (default; gauntlet of all 3 w/ placement points + standings + champion —
+  real board TBD), or any single minigame. Anyone in lobby can switch mode (owner-only later).
+- **Rooms**: HOST → 4-letter code; JOIN from any device. Verified 2-tab: peers discover, lobby
+  syncs, ordering deterministic. In-game sync smoke-tested at channel level only — verify
+  PC-host + phone-join on LAN for real.
+- Verified headless: all 3 games end-to-end ×multiple seeds, full 3-round gauntlet, standings.
+  ⚠ Hidden-pane tests report window size 0 — always set `ARC.dim` when driving headless.
+- NOT done: deploy to GitHub Pages (needs Sam's gh login), cosmetics in arcade (standalone TD
+  keeps them; arcade uses name+color), the actual board, owner-only mode lock.
+
+## Deploy (Sam runs once, ~5 min)
+1. Install GitHub CLI + `gh auth login`
+2. `cd "D:\Tunnel Divers"` then `gh repo create tunnel-divers --public --source=. --push`
+3. `gh api repos/{owner}/tunnel-divers/pages -X POST -f "source[branch]=main" -f "source[path]=/"`
+→ `https://<user>.github.io/tunnel-divers/arcade/` (tilt works — no iframe)
 
 ## What this is
 Falling tunnel-dodger arcade game (Rebel Assault II falcon-run feel, Gang Beasts tone).
