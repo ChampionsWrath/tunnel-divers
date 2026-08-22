@@ -7,6 +7,20 @@
 ## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
 ## export and to honor `ctx.practice` (no timer, no scoring, no end()).
 
+## Session 2026-08-22 (round 4) — roster now 6 games
+- **Bottle Blasters** (`games/blast.js`): farm skeet shoot, tap/click = shoot
+  (reticle at pointer, 0.22s fire cooldown). MP: shared seeded can stream,
+  spawn ramps 1→2.6/s over 75s, gold cans 3pts. Solo: 30s countdown, green
+  clock cans +4s on an independent 5.5-10.5s luck timer (deliberately NOT tied
+  to the spawn ramp — aimbot verified dead at ~58s, forever takes luck).
+- **Food Flash** (`games/food.js`): 50s-diner Overcooked-lite. Steer, touch a
+  counter station to grab (1 item hands, touch=swap, trash bin), touch table to
+  serve; complete all order items → table served. MP: most tables in 75s.
+  Solo: 40s clock, +3s/serve, +7s RUSH; order size ramps 1-2→3 items AND drain
+  accelerates past 45s (optimal scripted bot dies ~189s; humans ~90-120s).
+- Both honor the intro rule + practice, bots = seeded timelines, hot-seat +
+  online sync, in gauntlet (now 6 rounds).
+
 ## Session 2026-08-22 (round 3)
 - **Crown Carriers grab shield**: picking up the crown grants 2.5s immunity
   (gold pulsing ring); dash-thieves BOUNCE off a shielded carrier; bots lunge
