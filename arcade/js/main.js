@@ -1,20 +1,23 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=7';
-import * as audio from './audio.js?v=7';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=7';
-import { Net, makeRoomCode } from './net.js?v=7';
-import tunnel from './games/tunnel.js?v=7';
-import stack from './games/stack.js?v=7';
-import crown from './games/crown.js?v=7';
-import brain from './games/brain.js?v=7';
-import blast from './games/blast.js?v=7';
-import food from './games/food.js?v=7';
-import homerun from './games/homerun.js?v=7';
-import trivia from './games/trivia.js?v=7';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=8';
+import * as audio from './audio.js?v=8';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=8';
+import { Net, makeRoomCode } from './net.js?v=8';
+import tunnel from './games/tunnel.js?v=8';
+import stack from './games/stack.js?v=8';
+import crown from './games/crown.js?v=8';
+import brain from './games/brain.js?v=8';
+import blast from './games/blast.js?v=8';
+import food from './games/food.js?v=8';
+import homerun from './games/homerun.js?v=8';
+import trivia from './games/trivia.js?v=8';
+import ghost from './games/ghost.js?v=8';
+import greed from './games/greed.js?v=8';
+import lava from './games/lava.js?v=8';
 
-const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia };
+const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
   { id: 'party', name: 'Board Game', icon: '🎲', desc: 'All minigames, placement points, crown the champion. (Board coming soon — gauntlet rules for now.)' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
@@ -25,6 +28,9 @@ const MODES = [
   { id: 'food', name: food.name, icon: food.icon, desc: food.desc },
   { id: 'homerun', name: homerun.name, icon: homerun.icon, desc: homerun.desc },
   { id: 'trivia', name: trivia.name, icon: trivia.icon, desc: trivia.desc },
+  { id: 'ghost', name: ghost.name, icon: ghost.icon, desc: ghost.desc },
+  { id: 'greed', name: greed.name, icon: greed.icon, desc: greed.desc },
+  { id: 'lava', name: lava.name, icon: lava.icon, desc: lava.desc },
 ];
 
 const $ = id => document.getElementById(id);
@@ -202,7 +208,9 @@ function launch(mode, seed, fromNet) {
   const players = lobbyPlayers();
   if (mode === 'party') {
     const rng = mulberry32(seed);
-    const rounds = ['tunnel', 'stack', 'crown', 'brain', 'blast', 'food', 'homerun', 'trivia'].sort(() => rng() - 0.5);
+    // 11 games is a marathon — a Board Game night is 5 random picks
+    const rounds = ['tunnel', 'stack', 'crown', 'brain', 'blast', 'food', 'homerun', 'trivia', 'ghost', 'greed', 'lava']
+      .sort(() => rng() - 0.5).slice(0, 5);
     S.gauntlet = { rounds, round: 0, pts: {}, seed, players };
     for (const p of players) S.gauntlet.pts[p.id] = 0;
     startGame(rounds[0], seed + 1, players);
