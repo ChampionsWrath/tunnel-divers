@@ -1,7 +1,7 @@
 // HOME RUN HEROES — batter's-POV slugging (MLB The Show camera, Flick Home Run soul).
 // The pitch comes AT you; HOLD to charge, RELEASE at the plate. Great contact at
 // full charge doesn't just clear the wall — it leaves the stadium, the sky, Earth.
-import { TAU, clamp, lerp, mulberry32 } from '../util.js';
+import { TAU, clamp, lerp, mulberry32, mixHex } from '../util.js';
 import { drawBatter } from '../character.js';
 
 const PITCHES = 10;
@@ -132,7 +132,13 @@ class HomerunGame {
           const tag = q > 0.9 ? 'PERFECT!' : q > 0.65 ? 'GREAT!' : q > 0.35 ? 'GOOD' : 'CLIPPED';
           this.pop(tag, 50, 52, q > 0.9 ? '#ffd23f' : q > 0.65 ? '#7dff6a' : '#ffeccf', 30);
           this.ctx.audio.sfx.thud(1);
-          this.flight = { t: 0, dist, tier, dur: 1.1 + Math.min(1.6, dist / 700), shown: 0 };
+          // the camera rides with the ball — decorate the journey up front
+          const deco = { clouds: [], waves: [], birds: dist > 420 ? 400 + this.rng() * 80 : 0, aliens: [] };
+          for (let a = 95; a < Math.min(dist + 60, 300); a += 34) deco.waves.push({ alt: a, x: 0.12 + this.rng() * 0.76, w: 0.1 + this.rng() * 0.14 });
+          for (let a = 290; a < Math.min(dist + 80, 850); a += 62) deco.clouds.push({ alt: a, x: 0.14 + this.rng() * 0.72, s: 0.7 + this.rng() * 0.7 });
+          if (dist > 900) deco.aliens.push(880 + this.rng() * 120);
+          if (dist > 1700) deco.aliens.push(1500 + this.rng() * 250);
+          this.flight = { t: 0, dist, tier, dur: 1.2 + Math.min(2.8, dist / 350), shown: 0, deco, boatX: this.rng() < 0.5 ? 0.24 : 0.72 };
           this.phase = 'flight'; this.phaseT = 0;
         }
       } else if (f >= 1.12 && !this.swung) {
@@ -173,8 +179,123 @@ class HomerunGame {
     this.nextRunner();
   }
 
+  /* follow-cam: ride with the ball out of the park, over the ocean, into space */
+  renderFlight(g, W, H, s) {
+    const fl = this.flight, alt = fl.shown, t = fl.t;
+    const by = H * 0.4, span = H / 150;                    // ~150m visible vertically
+    const yOf = a => by + (alt - a) * span;
+    const altCol = a => a <= 80 ? mixHex('#a8cdec', '#7fb8e8', clamp(a / 80, 0, 1)) :
+      a <= 280 ? mixHex('#7fb8e8', '#3f6fae', (a - 80) / 200) :
+      a <= 700 ? mixHex('#3f6fae', '#141c3d', (a - 280) / 420) :
+      mixHex('#141c3d', '#04050e', clamp((a - 700) / 500, 0, 1));
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, altCol(alt + 55)); grd.addColorStop(1, altCol(alt - 55));
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    // stars fade in near space
+    const starA = clamp((alt - 620) / 250, 0, 1);
+    if (starA > 0) {
+      g.fillStyle = 'rgba(255,255,255,' + (0.85 * starA) + ')';
+      for (let i = 0; i < 46; i++) {
+        const fr = Math.sin(i * 127.1) * 43758.5453, f2 = fr - Math.floor(fr);
+        const fr2 = Math.sin(i * 311.7) * 12543.2, f3 = fr2 - Math.floor(fr2);
+        g.fillRect(f2 * W, ((f3 * H * 2 + alt * 0.4) % H), 2, 2);
+      }
+    }
+    // the stadium island shrinking below (parallax — hangs around a while)
+    const drop = Math.pow(alt, 0.62) * H / 27;
+    const gy = by + 60 * s + drop, gs = clamp(1 - alt / 480, 0.05, 1);
+    if (gy < H + 140 * s) {
+      // ocean pad around the park
+      g.fillStyle = '#1d4ed8';
+      g.beginPath(); g.ellipse(W / 2, gy + 26 * s * gs, 300 * s * gs, 90 * s * gs, 0, 0, TAU); g.fill();
+      // stadium bowl + field
+      g.fillStyle = '#57627a';
+      g.beginPath(); g.ellipse(W / 2, gy, 150 * s * gs, 52 * s * gs, 0, 0, TAU); g.fill();
+      g.fillStyle = '#4f9e46';
+      g.beginPath(); g.ellipse(W / 2, gy, 105 * s * gs, 34 * s * gs, 0, 0, TAU); g.fill();
+      g.fillStyle = '#b08652';
+      g.beginPath(); g.ellipse(W / 2, gy + 8 * s * gs, 26 * s * gs, 9 * s * gs, 0, 0, TAU); g.fill();
+      // the boat, bobbing off the stadium's shore
+      const bx2 = W / 2 + (fl.boatX - 0.5) * 560 * s * gs, by2 = gy + 30 * s * gs + Math.sin(t * 2.2) * 3 * s;
+      if (gs > 0.12) {
+        g.fillStyle = '#8a5a2b';
+        g.beginPath(); g.moveTo(bx2 - 20 * s * gs, by2); g.lineTo(bx2 + 20 * s * gs, by2);
+        g.lineTo(bx2 + 12 * s * gs, by2 + 10 * s * gs); g.lineTo(bx2 - 12 * s * gs, by2 + 10 * s * gs);
+        g.closePath(); g.fill();
+        g.strokeStyle = '#5f3d1c'; g.lineWidth = 2 * s * gs;
+        g.beginPath(); g.moveTo(bx2, by2); g.lineTo(bx2, by2 - 22 * s * gs); g.stroke();
+        g.fillStyle = '#f2ece2';
+        g.beginPath(); g.moveTo(bx2, by2 - 22 * s * gs); g.lineTo(bx2 + 15 * s * gs, by2 - 6 * s * gs);
+        g.lineTo(bx2, by2 - 6 * s * gs); g.closePath(); g.fill();
+      }
+    }
+    // ocean-zone wave squiggles drifting past
+    g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 2.5 * s; g.lineCap = 'round';
+    for (const wv of fl.deco.waves) {
+      const y = yOf(wv.alt);
+      if (y < -20 || y > H + 20) continue;
+      g.beginPath(); g.moveTo(wv.x * W, y);
+      g.quadraticCurveTo(wv.x * W + wv.w * W * 0.5, y - 6 * s, wv.x * W + wv.w * W, y);
+      g.stroke();
+    }
+    // clouds
+    for (const cl of fl.deco.clouds) {
+      const y = yOf(cl.alt);
+      if (y < -60 || y > H + 60) continue;
+      g.fillStyle = 'rgba(255,255,255,0.85)';
+      g.beginPath(); g.ellipse(cl.x * W, y, 52 * s * cl.s, 15 * s * cl.s, 0, 0, TAU); g.fill();
+      g.beginPath(); g.ellipse(cl.x * W + 30 * s * cl.s, y - 9 * s * cl.s, 32 * s * cl.s, 12 * s * cl.s, 0, 0, TAU); g.fill();
+    }
+    // birds — a flapping V formation
+    if (fl.deco.birds) {
+      const y = yOf(fl.deco.birds);
+      if (y > -30 && y < H + 30) {
+        g.strokeStyle = '#14100a'; g.lineWidth = 2.5 * s;
+        for (let i = 0; i < 5; i++) {
+          const bx3 = W * 0.3 + i * 24 * s + t * 22 * s, by3 = y + Math.abs(i - 2) * 10 * s;
+          const flap = Math.sin(t * 9 + i) * 5 * s;
+          g.beginPath(); g.moveTo(bx3 - 8 * s, by3 - flap); g.lineTo(bx3, by3); g.lineTo(bx3 + 8 * s, by3 - flap); g.stroke();
+        }
+      }
+    }
+    // alien saucers
+    for (const aa of fl.deco.aliens) {
+      const y = yOf(aa) + Math.sin(t * 3) * 6 * s;
+      if (y < -40 || y > H + 40) continue;
+      const ax = W * 0.68, r = 30 * s;
+      g.fillStyle = 'rgba(125,255,106,0.25)';
+      g.beginPath(); g.ellipse(ax, y + r * 0.9, r * 1.4, r * 0.5, 0, 0, TAU); g.fill();
+      g.fillStyle = '#9aa6b2'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+      g.beginPath(); g.ellipse(ax, y, r, r * 0.34, 0, 0, TAU); g.fill(); g.stroke();
+      g.fillStyle = '#8fd0ff';
+      g.beginPath(); g.arc(ax, y - r * 0.22, r * 0.4, Math.PI, TAU); g.fill(); g.stroke();
+      g.fillStyle = '#ffd23f';
+      for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(ax + i * r * 0.5, y + r * 0.16, 3 * s, 0, TAU); g.fill(); }
+    }
+    // the ball, riding with us
+    const bx = W / 2 + Math.sin(t * 2.6) * 14 * s, bby = by;
+    g.strokeStyle = fl.tier >= 2 ? 'rgba(143,208,255,0.8)' : 'rgba(255,255,255,0.55)';
+    g.lineWidth = 6 * s; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(bx, bby + 14 * s); g.lineTo(bx - Math.sin(t * 2.6) * 8 * s, bby + 95 * s); g.stroke();
+    g.fillStyle = '#f2ece2'; g.strokeStyle = '#c0392b'; g.lineWidth = 2.5;
+    g.beginPath(); g.arc(bx, bby, 10 * s, 0, TAU); g.fill();
+    g.beginPath(); g.arc(bx, bby, 7 * s, -0.6, 1.2); g.stroke();
+    g.beginPath(); g.arc(bx, bby, 7 * s, Math.PI - 0.6, Math.PI + 1.2); g.stroke();
+    // live distance, front and center
+    g.textAlign = 'center';
+    g.font = '900 ' + Math.round(44 * s + 14) + 'px ui-monospace,monospace';
+    g.lineWidth = 6; g.strokeStyle = 'rgba(10,8,4,0.9)';
+    g.strokeText(alt + 'm', W / 2, H * 0.15);
+    g.fillStyle = fl.tier >= 2 ? '#8fd0ff' : fl.tier === 1 ? '#ffd23f' : '#ffeccf';
+    g.fillText(alt + 'm', W / 2, H * 0.15);
+  }
   render() {
     const g = this.ctx.g, { W, H } = this.ctx.dim, s = Math.min(W, H) / 700;
+    if (this.state === 'run' && this.phase === 'flight' && this.flight) {
+      this.renderFlight(g, W, H, s);
+      this.drawPops(g, W, H);
+      return;
+    }
     const VX = W / 2, VY = H * 0.34;                      // vanishing point / center field
     const space = this.spaceFx;
     // ---- sky (day → space during a moonshot) ----
@@ -323,21 +444,6 @@ class HomerunGame {
       g.beginPath(); g.arc(bx, by, br * 0.72, -0.6, 1.2); g.stroke();
       g.beginPath(); g.arc(bx, by, br * 0.72, Math.PI - 0.6, Math.PI + 1.2); g.stroke();
     }
-    // ---- the hit: ball rockets away toward (past) the wall ----
-    if (this.phase === 'flight' && this.flight) {
-      const fl = this.flight, f = clamp(fl.t / fl.dur, 0, 1);
-      const arcX = VX + (this.rngSeen || 0);
-      const bx = lerp(VX - 20 * s, VX + W * 0.06, f);
-      const rise = fl.tier >= 2 ? H * 0.32 : fl.tier === 1 ? H * 0.22 : H * 0.12;
-      const by = lerp(plateY - 60 * s, VY - rise, Math.pow(f, 0.7));
-      const br = lerp(16, fl.tier >= 2 ? 1.2 : 2.2, Math.pow(f, 0.8)) * s;
-      // streak trail
-      g.strokeStyle = fl.tier >= 2 ? 'rgba(143,208,255,0.7)' : fl.tier === 1 ? 'rgba(255,210,63,0.6)' : 'rgba(255,255,255,0.45)';
-      g.lineWidth = br * 0.9; g.lineCap = 'round';
-      g.beginPath(); g.moveTo(lerp(VX - 20 * s, bx, 0.75), lerp(plateY - 60 * s, by, 0.72)); g.lineTo(bx, by); g.stroke();
-      g.fillStyle = '#f2ece2';
-      g.beginPath(); g.arc(bx, by, Math.max(1, br), 0, TAU); g.fill();
-    }
     // ---- the batter: sideways in the box, real cut ----
     const swingAge = this.tt - this.swingT;
     const swing = swingAge >= 0 && swingAge < 0.3 ? swingAge / 0.3 : null;
@@ -371,6 +477,9 @@ class HomerunGame {
       for (const bt of this.bots) { g.fillStyle = bt.p.color; g.fillText(bt.p.name + ' ' + bt.n + 'm', W - 14, yy); yy += 17; }
       for (const r of this.remotes) { const sc = this.remoteLive[r.id]; g.fillStyle = r.color; g.fillText(r.name + ' ' + (sc ? sc.n : 0) + 'm', W - 14, yy); yy += 17; }
     }
+    this.drawPops(g, W, H);
+  }
+  drawPops(g, W, H) {
     g.textAlign = 'center';
     for (const p of this.pops) {
       const f = 1 - p.t / p.dur;
