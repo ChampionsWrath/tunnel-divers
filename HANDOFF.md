@@ -7,6 +7,20 @@
 ## real instance + countdown). New games only need: a `howto:{goal,touch,keys,tip}`
 ## export and to honor `ctx.practice` (no timer, no scoring, no end()).
 
+## Session 2026-08-22 (round 6) — roster now 8 games
+- Fixed swipe-mode taps: quick still press (<250ms/<12px) fires taps[0] on
+  release (ready screens + Stack drops were dead on phones in swipe mode).
+- Food Flash map v2: stations in 4 corners (dead-ends), tables mid-floor,
+  trash left wall, 0.7s grab cooldown → no accidental pickups.
+- **Home Run Heroes** (`games/homerun.js`): 10 pitches, hold=charge (1.1s to
+  full), release=swing; contact q from |ball−plate| (13% window), dist ≈
+  22+charge*(0.35+0.65q)*118 m; pitch speed varies; total distance wins.
+- **Trivia Triathlon** (`games/trivia.js`): BANK = 8 cats × 10 evergreen Qs
+  (correct answer FIRST in source, shuffled at build). Seeded run: 3 cats ×
+  3 Qs + bonus (2pts, any cat). 12s/Q, one pick, reveal. Hot-seat gets fresh
+  Qs per player. Perfect score = 11.
+- Imports at ?v=4. Deployed (git push).
+
 ## Session 2026-08-22 (round 5) — tilt pipeline v2
 - input.js tiltXY: 14Hz low-pass on sensor, 1.5° deadzone, ~16.5° full deflection,
   pow-1.3 easing. Orientation is PLAYER-CHOSEN via picker on every ready-up card
