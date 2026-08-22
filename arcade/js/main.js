@@ -1,18 +1,20 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=3';
-import * as audio from './audio.js?v=3';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=3';
-import { Net, makeRoomCode } from './net.js?v=3';
-import tunnel from './games/tunnel.js?v=3';
-import stack from './games/stack.js?v=3';
-import crown from './games/crown.js?v=3';
-import brain from './games/brain.js?v=3';
-import blast from './games/blast.js?v=3';
-import food from './games/food.js?v=3';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=4';
+import * as audio from './audio.js?v=4';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=4';
+import { Net, makeRoomCode } from './net.js?v=4';
+import tunnel from './games/tunnel.js?v=4';
+import stack from './games/stack.js?v=4';
+import crown from './games/crown.js?v=4';
+import brain from './games/brain.js?v=4';
+import blast from './games/blast.js?v=4';
+import food from './games/food.js?v=4';
+import homerun from './games/homerun.js?v=4';
+import trivia from './games/trivia.js?v=4';
 
-const GAMES = { tunnel, stack, crown, brain, blast, food };
+const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia };
 const MODES = [
   { id: 'party', name: 'Board Game', icon: '🎲', desc: 'All minigames, placement points, crown the champion. (Board coming soon — gauntlet rules for now.)' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
@@ -21,6 +23,8 @@ const MODES = [
   { id: 'brain', name: brain.name, icon: brain.icon, desc: brain.desc },
   { id: 'blast', name: blast.name, icon: blast.icon, desc: blast.desc },
   { id: 'food', name: food.name, icon: food.icon, desc: food.desc },
+  { id: 'homerun', name: homerun.name, icon: homerun.icon, desc: homerun.desc },
+  { id: 'trivia', name: trivia.name, icon: trivia.icon, desc: trivia.desc },
 ];
 
 const $ = id => document.getElementById(id);
@@ -198,7 +202,7 @@ function launch(mode, seed, fromNet) {
   const players = lobbyPlayers();
   if (mode === 'party') {
     const rng = mulberry32(seed);
-    const rounds = ['tunnel', 'stack', 'crown', 'brain', 'blast', 'food'].sort(() => rng() - 0.5);
+    const rounds = ['tunnel', 'stack', 'crown', 'brain', 'blast', 'food', 'homerun', 'trivia'].sort(() => rng() - 0.5);
     S.gauntlet = { rounds, round: 0, pts: {}, seed, players };
     for (const p of players) S.gauntlet.pts[p.id] = 0;
     startGame(rounds[0], seed + 1, players);

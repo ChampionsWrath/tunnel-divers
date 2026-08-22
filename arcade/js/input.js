@@ -80,11 +80,21 @@ export function attachTouch(cv) {
     try { cv.setPointerCapture(e.pointerId); } catch (err) { }
     touches.add(e.pointerId);
     if (ctl === 'tilt' && tiltOK) { taps[0] = true; return; }
-    if (pad.id === null) { pad.id = e.pointerId; pad.ox = e.clientX; pad.oy = e.clientY; pad.x = e.clientX; pad.y = e.clientY; }
+    if (pad.id === null) {
+      pad.id = e.pointerId; pad.ox = e.clientX; pad.oy = e.clientY; pad.x = e.clientX; pad.y = e.clientY;
+      pad.t0 = performance.now(); pad.sx = e.clientX; pad.sy = e.clientY;
+    }
     else taps[0] = true;
   });
   cv.addEventListener('pointermove', e => { if (e.pointerId === pad.id) { pad.x = e.clientX; pad.y = e.clientY; } });
-  const end = e => { if (e.pointerId === pad.id) pad.id = null; touches.delete(e.pointerId); };
+  const end = e => {
+    if (e.pointerId === pad.id) {
+      // a quick, still press was a TAP, not a steer — swipe mode needs taps too
+      if (performance.now() - pad.t0 < 250 && Math.hypot(pad.x - pad.sx, pad.y - pad.sy) < 12) taps[0] = true;
+      pad.id = null;
+    }
+    touches.delete(e.pointerId);
+  };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('touchstart', e => e.preventDefault(), { passive: false });

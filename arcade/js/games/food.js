@@ -6,9 +6,11 @@ import { TAU, clamp, lerp, mulberry32 } from '../util.js';
 const T_LIMIT = 75, SOLO_START = 40;
 const ACC = 330, DRAG = 3.1, VMAX = 118, PRr = 4.4;   // virtual stage 100 x 100
 const MENU = [['burger', '🍔'], ['fries', '🍟'], ['shake', '🥤'], ['dog', '🌭']];
-const TABLES = [[25, 46], [75, 46], [25, 74], [75, 74], [50, 60]];
-const STATIONS = [[14, 16], [38, 16], [62, 16], [86, 16]];   // one per menu item
-const TRASH = [92, 92];
+// stations live in the four CORNERS (deliberate dead-ends — no drive-by pickups);
+// tables cluster mid-floor with wide aisles between them
+const TABLES = [[50, 30], [26, 55], [74, 55], [50, 80], [50, 55]];
+const STATIONS = [[12, 14], [88, 14], [12, 90], [88, 90]];
+const TRASH = [8, 52];
 
 export default {
   id: 'food', name: 'Food Flash', icon: '🍔',
@@ -119,7 +121,8 @@ class FoodGame {
     const sp = Math.hypot(this.vx, this.vy);
     if (sp > VMAX) { this.vx *= VMAX / sp; this.vy *= VMAX / sp; }
     this.px = clamp(this.px + this.vx * rdt, PRr, 100 - PRr);
-    this.py = clamp(this.py + this.vy * rdt, 24, 100 - PRr);   // counter blocks the top strip
+    this.py = clamp(this.py + this.vy * rdt, PRr + 8, 100 - PRr);   // sign strip up top
+    this.grabCd = (this.grabCd || 0) - rdt;
     // bounce off tables (solid)
     for (const [tx, ty] of TABLES) {
       const dx = this.px - tx, dy = this.py - ty, d = Math.hypot(dx, dy), min = PRr + 7.2;
@@ -129,12 +132,12 @@ class FoodGame {
         if (vr < 0) { this.vx -= vr * dx / d * 1.4; this.vy -= vr * dy / d * 1.4; }
       }
     }
-    // stations: grab / swap
-    for (let si = 0; si < STATIONS.length; si++) {
+    // stations: grab / swap (short cooldown so brushing a corner can't swap your hands)
+    if (this.grabCd <= 0) for (let si = 0; si < STATIONS.length; si++) {
       const [sx2, sy2] = STATIONS[si];
-      if (Math.hypot(this.px - sx2, this.py - sy2) < PRr + 7.5) {
+      if (Math.hypot(this.px - sx2, this.py - sy2) < PRr + 6.5) {
         if (this.carry !== si) {
-          this.carry = si;
+          this.carry = si; this.grabCd = 0.7;
           this.ctx.audio.sfx.grab();
           this.pop(MENU[si][1], sx2, sy2 - 9, '#ffeccf', 22);
         }
@@ -190,30 +193,30 @@ class FoodGame {
     const S = Math.min(W / 100, H / 108);
     const ox = (W - S * 100) / 2, oy = (H - S * 100) / 2 + S * 4;
     const mx = v => ox + v * S, my = v => oy + v * S;
-    // 50s diner: checkerboard floor
+    // 50s diner: checkerboard floor everywhere
     g.fillStyle = '#141116'; g.fillRect(0, 0, W, H);
     const tile = S * 8.4;
-    for (let r = 0; r < 12; r++) for (let c = 0; c < Math.ceil(W / tile) + 1; c++) {
+    for (let r = 0; r < Math.ceil(H / tile) + 1; r++) for (let c = 0; c < Math.ceil(W / tile) + 1; c++) {
       g.fillStyle = (r + c) % 2 ? '#e8e2d8' : '#c73a4a';
-      g.fillRect(c * tile - (tile - (ox % tile)), my(24) + r * tile, tile, tile);
+      g.fillRect(c * tile, r * tile, tile, tile);
     }
-    g.fillStyle = 'rgba(20,17,22,0.25)'; g.fillRect(0, my(24), W, H);   // dim the floor a touch
-    // chrome counter along the top
-    const cg = g.createLinearGradient(0, 0, 0, my(22));
-    cg.addColorStop(0, '#e8ecf0'); cg.addColorStop(0.5, '#9aa6b2'); cg.addColorStop(1, '#c9d4dc');
-    g.fillStyle = cg; g.fillRect(0, 0, W, my(22) - 0);
-    g.fillStyle = '#c73a4a'; g.fillRect(0, my(22) - S * 2, W, S * 2);
-    // neon sign
-    g.font = '900 ' + Math.round(S * 7) + 'px "Segoe UI",system-ui';
+    g.fillStyle = 'rgba(20,17,22,0.3)'; g.fillRect(0, 0, W, H);
+    // neon sign strip
+    g.fillStyle = 'rgba(20,17,22,0.85)'; g.fillRect(0, 0, W, my(9));
+    g.font = '900 ' + Math.round(S * 6.5) + 'px "Segoe UI",system-ui';
     g.textAlign = 'center';
     g.fillStyle = '#3ad0e0';
     g.fillText('✦ FOOD FLASH DINER ✦', W / 2, my(6));
-    // stations
+    // corner kitchen stations: chrome pads you enter on purpose
     for (let si = 0; si < STATIONS.length; si++) {
       const [sx2, sy2] = STATIONS[si];
-      g.fillStyle = '#7a8794'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
-      g.beginPath(); g.arc(mx(sx2), my(sy2), S * 7, 0, TAU); g.fill(); g.stroke();
-      g.font = Math.round(S * 8) + 'px serif'; g.textBaseline = 'middle';
+      const cg = g.createRadialGradient(mx(sx2), my(sy2), 2, mx(sx2), my(sy2), S * 9);
+      cg.addColorStop(0, '#e8ecf0'); cg.addColorStop(1, '#9aa6b2');
+      g.fillStyle = cg; g.strokeStyle = '#14100a'; g.lineWidth = 3;
+      g.beginPath(); g.arc(mx(sx2), my(sy2), S * 8, 0, TAU); g.fill(); g.stroke();
+      g.strokeStyle = '#c73a4a'; g.lineWidth = 2;
+      g.beginPath(); g.arc(mx(sx2), my(sy2), S * 6.4, 0, TAU); g.stroke();
+      g.font = Math.round(S * 7.5) + 'px serif'; g.textBaseline = 'middle'; g.fillStyle = '#000';
       g.fillText(MENU[si][1], mx(sx2), my(sy2) + 1);
       g.textBaseline = 'alphabetic';
     }
