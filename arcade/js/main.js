@@ -1,21 +1,21 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=9';
-import * as audio from './audio.js?v=9';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=9';
-import { Net, makeRoomCode } from './net.js?v=9';
-import tunnel from './games/tunnel.js?v=9';
-import stack from './games/stack.js?v=9';
-import crown from './games/crown.js?v=9';
-import brain from './games/brain.js?v=9';
-import blast from './games/blast.js?v=9';
-import food from './games/food.js?v=9';
-import homerun from './games/homerun.js?v=9';
-import trivia from './games/trivia.js?v=9';
-import ghost from './games/ghost.js?v=9';
-import greed from './games/greed.js?v=9';
-import lava from './games/lava.js?v=9';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=10';
+import * as audio from './audio.js?v=10';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=10';
+import { Net, makeRoomCode } from './net.js?v=10';
+import tunnel from './games/tunnel.js?v=10';
+import stack from './games/stack.js?v=10';
+import crown from './games/crown.js?v=10';
+import brain from './games/brain.js?v=10';
+import blast from './games/blast.js?v=10';
+import food from './games/food.js?v=10';
+import homerun from './games/homerun.js?v=10';
+import trivia from './games/trivia.js?v=10';
+import ghost from './games/ghost.js?v=10';
+import greed from './games/greed.js?v=10';
+import lava from './games/lava.js?v=10';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
