@@ -22,6 +22,35 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 13) — board UX + ground/decor (Sam's 5 fixes)
+- Sam's feedback: chips under iPhone status bar; forks unselectable; only ROLL
+  offered; board felt like floating spaces; wanted carnival decor along routes.
+- **Safe area**: index.html `#safeProbe` div (env(safe-area-inset-*)) read in
+  main.js resize() → `dim.safeTop/safeBottom`. Chips draw at safeTop+8; TURN
+  label lifts above the home bar. Any new HUD must respect these.
+- **Turn menu**: turn start is state `'menu'` (was auto item→roll): buttons
+  🎲 ROLL / 🃏 ITEMS(n) / 🗺️ MAP. MAP toggles `mapView` (camera eases to Zfit
+  whole-board, ✕ CLOSE MAP). ITEMS opens overlay card (USE per item / BACK),
+  doPlayItem returns to menu. Bots: item-then-roll through the same acts.
+- **Fork fix**: branch hit-test used stale `this.S*5` (NaN after render v2
+  rewrite) → now `(this.zoom||10)*4.5`, PLUS explicit direction buttons
+  `'br'+nid` ("⬆️ 🎡 path" style). Verified both paths headlessly (buttons
+  br28/br6 and raw tile tap both fire act('branch')).
+- **Ground**: world-anchored (all proj()-based, moves with camera): sunset sky
+  → ocean strip (y −14…−8) → sand → plank seams → 3-pass boardwalk ribbon
+  drawn UNDER route edges (Z*8.2/7.2/6.6 strokes) → string lights at y=−2.
+- **Decor**: buildDecor() places tents/carousel/balloons/popcorn/cotton
+  candy/lamps at world coords beside routes; drawDecor() renders per kind,
+  y-sorted with tiles/players. Dice shows '?' above head pre-roll.
+- imports bumped **?v=14** (all of main.js + character.js sub-imports).
+- Verified headless: full 8-turn bot game completes through menu state; map
+  toggle (zoom 3.7 vs game ~15); items overlay use/cancel; shield armed;
+  branch both input paths; visual snapshot looks Mario-Party-ish (ground,
+  ribbon, lights, tent, chips clear of 54px notch band). Committed 46b8881,
+  pushed (Pages live ~1min).
+- **Next**: Sam phone-playtests round 13; then real multi-device board sync +
+  asym Ghost Grabbers test (still untested with real peers).
+
 ## Session 2026-08-22 (round 12) — board visuals v2 (Mario Party cam)
 - Sam rejected the flat zoomed-out board (screenshot vs Mario Party Superstars).
   board.js render v2: camera LOCKED to active player (update() smooths
