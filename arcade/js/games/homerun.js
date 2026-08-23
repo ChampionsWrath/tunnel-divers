@@ -5,6 +5,7 @@ import { TAU, clamp, lerp, mulberry32, mixHex } from '../util.js';
 import { drawBatter } from '../character.js';
 
 const PITCHES = 10;
+const FL_INTRO = 0.55, FL_HOLD = 0.65;   // batter-POV departure, then rest-at-distance hold
 
 export default {
   id: 'homerun', name: 'Home Run Heroes', icon: '⚾',
@@ -138,7 +139,10 @@ class HomerunGame {
           for (let m = 150; m < dist + 200; m += 55 + this.rng() * 45) deco.clouds.push({ m, yf: 0.08 + this.rng() * 0.3, s: 0.7 + this.rng() * 0.8 });
           if (dist > 900) deco.aliens.push(860 + this.rng() * 140);
           if (dist > 1700) deco.aliens.push(1450 + this.rng() * 300);
-          this.flight = { t: 0, dist, tier, dur: 1.2 + Math.min(2.8, dist / 350), shown: 0, deco, boatM: 140 + this.rng() * 90, splashed: false };
+          this.flight = {
+            t: 0, dist, tier, dur: 1.4 + Math.min(3, dist / 320), shown: 0, deco,
+            boatM: 140 + this.rng() * 90, splashed: false, rot: 0, prevShown: 0,
+          };
           this.phase = 'flight'; this.phaseT = 0;
         }
       } else if (f >= 1.12 && !this.swung) {
@@ -149,12 +153,18 @@ class HomerunGame {
     } else if (this.phase === 'flight') {
       const fl = this.flight;
       fl.t += rdt;
-      fl.shown = Math.round(fl.dist * clamp(fl.t / (fl.dur * 0.85), 0, 1));
+      // stage A (batter POV, ball departs) → stage B (ball-centered chase).
+      // Distance eases OUT: the world and the ball's spin decelerate together.
+      const u = clamp((fl.t - FL_INTRO) / fl.dur, 0, 1);
+      const ease = 1 - Math.pow(1 - u, 3);
+      fl.shown = Math.round(fl.dist * ease);
+      fl.rot += (fl.shown - fl.prevShown) * 0.055;   // spin ∝ ground speed
+      fl.prevShown = fl.shown;
       // milestone stingers as the counter climbs
       if (!fl.m1 && fl.shown > 120) { fl.m1 = true; this.ctx.audio.sfx.pow(); this.pop('HOME RUN!', 50, 40, '#7dff6a', 30); }
       if (!fl.m2 && fl.shown > 300) { fl.m2 = true; this.ctx.audio.sfx.win(); this.pop('OUT OF THE PARK!!', 50, 34, '#ffd23f', 32); }
       if (!fl.m3 && fl.shown > 800) { fl.m3 = true; this.spaceFx = 1; this.ctx.audio.sfx.zone(); this.pop('🚀 INTO SPACE!!!', 50, 28, '#8fd0ff', 34, 1.6); }
-      if (fl.t >= fl.dur) { const d = fl.dist; this.flight = null; this.afterPitch(d); }
+      if (fl.t >= FL_INTRO + fl.dur + FL_HOLD) { const d = fl.dist; this.flight = null; this.afterPitch(d); }
     } else if (this.phase === 'between') {
       if (this.phaseT > 0.9) {
         if (this.pitchNo >= PITCHES && !this.practice) this.finishRunner();
@@ -182,19 +192,19 @@ class HomerunGame {
   /* side-chase cam: the ball tears away HORIZONTALLY — out of the park, across
      the ocean, up through the clouds, and (on a moonshot) clean out of the sky */
   renderFlight(g, W, H, s) {
-    const fl = this.flight, shown = fl.shown, t = fl.t, fT = clamp(t / fl.dur, 0, 1);
+    const fl = this.flight, shown = fl.shown, t = fl.t;
+    const u = clamp((t - FL_INTRO) / fl.dur, 0, 1);      // eased world progress lives in update()
+    const resting = u >= 1;
     const ppm = W / 230;                                 // px per meter of scenery
-    const bx = W * 0.3;                                  // ball stays here; world scrolls left
+    const bx = W / 2, ballCY = H * 0.45;                 // the ball IS the center of the world
     const xOf = m => bx + (m - shown) * ppm;
-    // ball arc height (px): normal hits arc up & back down; moonshots keep climbing
-    const peak = fl.tier >= 2 ? H * 0.62 : fl.tier === 1 ? H * 0.42 : H * 0.26;
+    // arc height: normal hits rise then settle to the water; moonshots keep climbing
+    const peak = fl.tier >= 2 ? H * 0.6 : fl.tier === 1 ? H * 0.4 : H * 0.24;
     let hPx;
-    if (fl.tier >= 2) hPx = peak * Math.pow(fT, 0.55);
-    else hPx = peak * Math.sin(Math.PI * Math.min(1, fT * (fl.tier === 1 ? 0.92 : 1)));
-    // camera tilts up with a high ball so it never leaves frame
-    const camUp = Math.max(0, hPx - H * 0.38);
-    const seaY = H * 0.78 + camUp;
-    const ballY = seaY - 34 * s - hPx + camUp * 0 - (0);
+    if (fl.tier >= 2) hPx = peak * Math.pow(u, 0.55);
+    else hPx = Math.max(0, peak * Math.sin(Math.PI * Math.min(1, u * 1.04)));
+    // the WORLD moves; the ball doesn't: sea line sits below by the ball's altitude
+    const seaY = ballCY + 30 * s + hPx;
     // sky: day → space as the ball climbs
     const spaceF = clamp((hPx - H * 0.35) / (H * 0.3), 0, 1) * (fl.tier >= 2 ? 1 : 0.25);
     const grd = g.createLinearGradient(0, 0, 0, seaY);
@@ -211,7 +221,7 @@ class HomerunGame {
     }
     // the OCEAN — a real horizontal water surface the ball flies over
     if (seaY < H + 60) {
-      const og = g.createLinearGradient(0, seaY, 0, H + camUp * 0);
+      const og = g.createLinearGradient(0, seaY, 0, H + 80);
       og.addColorStop(0, '#3f8fd4'); og.addColorStop(1, '#123a6e');
       g.fillStyle = og; g.fillRect(0, seaY, W, H - seaY + 80);
       g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2.5 * s; g.lineCap = 'round';
@@ -305,27 +315,39 @@ class HomerunGame {
       g.fillStyle = '#ffd23f';
       for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(x + i * r * 0.5, y + r * 0.16, 3 * s, 0, TAU); g.fill(); }
     }
-    // the BALL — streaking rightward with a horizontal trail
-    const bY = Math.max(H * 0.12, seaY - 30 * s - hPx);
-    const splashing = fl.tier < 2 && fT > 0.94;
-    const drawY = splashing ? seaY + 4 * s : bY;
-    g.strokeStyle = fl.tier >= 2 ? 'rgba(143,208,255,0.8)' : 'rgba(255,255,255,0.6)';
-    g.lineWidth = 6 * s; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(bx - 14 * s, drawY + 6 * s); g.lineTo(bx - 110 * s, drawY + 26 * s); g.stroke();
-    if (splashing) {
-      if (!fl.splashed) { fl.splashed = true; this.ctx.audio.sfx.thud(0.6); }
-      g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 3 * s;
-      for (let i = 0; i < 5; i++) {
-        const a = -0.4 - i * 0.5;
-        g.beginPath(); g.moveTo(bx, seaY + 2 * s);
-        g.lineTo(bx + Math.cos(a) * 22 * s, seaY + 2 * s + Math.sin(a) * 22 * s); g.stroke();
-      }
-    } else {
-      g.fillStyle = '#f2ece2'; g.strokeStyle = '#c0392b'; g.lineWidth = 2.5;
-      g.beginPath(); g.arc(bx, drawY, 10 * s, 0, TAU); g.fill();
-      g.beginPath(); g.arc(bx, drawY, 7 * s, -0.6, 1.2); g.stroke();
-      g.beginPath(); g.arc(bx, drawY, 7 * s, Math.PI - 0.6, Math.PI + 1.2); g.stroke();
+    // the BALL — dead-center, SPINNING; spin and world-speed die down together
+    const speed = 1 - u;                                    // eased progress derivative ~ this
+    const landed = resting && fl.tier < 2;
+    if (landed && !fl.splashed) { fl.splashed = true; this.ctx.audio.sfx.thud(0.6); }
+    const drawY = landed ? seaY - 6 * s : ballCY;
+    // motion streaks while the world is still rushing by
+    if (speed > 0.05 && !resting) {
+      g.strokeStyle = fl.tier >= 2 ? 'rgba(143,208,255,' + (0.7 * speed) + ')' : 'rgba(255,255,255,' + (0.55 * speed) + ')';
+      g.lineWidth = 5 * s; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(bx - 20 * s, drawY + 4 * s); g.lineTo(bx - (40 + 110 * speed) * s, drawY + 14 * s); g.stroke();
+      g.beginPath(); g.moveTo(bx - 18 * s, drawY - 8 * s); g.lineTo(bx - (30 + 80 * speed) * s, drawY - 14 * s); g.stroke();
     }
+    // resting ripples on the water
+    if (landed) {
+      g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 2 * s;
+      const rp = (t - FL_INTRO - fl.dur) / FL_HOLD;
+      for (let i = 0; i < 2; i++) {
+        const rr2 = (12 + rp * 40 + i * 16) * s;
+        g.globalAlpha = Math.max(0, 0.7 - rp - i * 0.25);
+        g.beginPath(); g.ellipse(bx, seaY, rr2, rr2 * 0.3, 0, 0, TAU); g.stroke();
+      }
+      g.globalAlpha = 1;
+    }
+    // the big spinning ball (rotation integrated from distance in update)
+    g.save(); g.translate(bx, drawY); g.rotate(fl.rot);
+    const br = (landed ? 11 : 15) * s;
+    g.fillStyle = '#f2ece2'; g.strokeStyle = '#c0392b'; g.lineWidth = Math.max(2, br * 0.16);
+    g.beginPath(); g.arc(0, 0, br, 0, TAU); g.fill();
+    g.beginPath(); g.arc(0, 0, br * 0.7, -0.6, 1.2); g.stroke();
+    g.beginPath(); g.arc(0, 0, br * 0.7, Math.PI - 0.6, Math.PI + 1.2); g.stroke();
+    g.strokeStyle = '#14100a'; g.lineWidth = Math.max(1.2, br * 0.08);
+    g.beginPath(); g.arc(0, 0, br, 0, TAU); g.stroke();
+    g.restore();
     // live distance counter
     g.textAlign = 'center';
     g.font = '900 ' + Math.round(44 * s + 14) + 'px ui-monospace,monospace';
@@ -336,7 +358,9 @@ class HomerunGame {
   }
   render() {
     const g = this.ctx.g, { W, H } = this.ctx.dim, s = Math.min(W, H) / 700;
-    if (this.state === 'run' && this.phase === 'flight' && this.flight) {
+    // stage B of a flight: ball-centered chase cam. Stage A falls through to the
+    // normal batter POV so contact keeps its context before the camera leaves.
+    if (this.state === 'run' && this.phase === 'flight' && this.flight && this.flight.t >= FL_INTRO) {
       this.renderFlight(g, W, H, s);
       this.drawPops(g, W, H);
       return;
@@ -488,6 +512,18 @@ class HomerunGame {
       g.beginPath(); g.arc(bx, by, br, 0, TAU); g.fill();
       g.beginPath(); g.arc(bx, by, br * 0.72, -0.6, 1.2); g.stroke();
       g.beginPath(); g.arc(bx, by, br * 0.72, Math.PI - 0.6, Math.PI + 1.2); g.stroke();
+    }
+    // ---- flight stage A: from the batter's eyes, the ball rockets away
+    //      toward center field, shrinking into the sky ----
+    if (this.phase === 'flight' && this.flight && this.flight.t < FL_INTRO) {
+      const f = this.flight.t / FL_INTRO;
+      const bx2 = lerp(VX + this.pitchDrift * W, VX + W * 0.04, f);
+      const by2 = lerp(plateY - 46 * s, VY - H * (0.06 + this.flight.tier * 0.05), Math.pow(f, 0.8));
+      const br2 = lerp(20, 4, Math.pow(f, 0.7)) * s;
+      g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = br2 * 0.8; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(lerp(VX, bx2, 0.6), lerp(plateY - 46 * s, by2, 0.55)); g.lineTo(bx2, by2); g.stroke();
+      g.fillStyle = '#f2ece2'; g.strokeStyle = '#c0392b'; g.lineWidth = Math.max(1.2, br2 * 0.16);
+      g.beginPath(); g.arc(bx2, by2, br2, 0, TAU); g.fill(); g.stroke();
     }
     // ---- the batter: sideways in the box, real cut ----
     const swingAge = this.tt - this.swingT;
