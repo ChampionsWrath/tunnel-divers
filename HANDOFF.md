@@ -22,6 +22,17 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 9) — multiplayer joining FIXED
+- Sam's 3-player real-world test failed: all players alone in same-code rooms.
+  Cause: Trystero 'torrent' strategy → public WebTorrent trackers often dead →
+  silent discovery failure. net.js now uses **'nostr' strategy** with pinned
+  relays (damus.io, nos.lol, relay.nostr.band, nostr.mom, snort.social,
+  redundancy 4) + **STUN + openrelay TURN** in rtcConfig. appId bumped to
+  tunnel-divers-arcade-v2. Lobby shows 'N in room · M relays' + hints
+  (self-refreshing line). Verified 2-tab discovery on the new stack.
+- ⚠ if joining breaks again: check relayCount() in lobby line first — 0 relays
+  = outbound wss blocked/relay list rotted; swap RELAYS list in net.js.
+
 ## Session 2026-08-22 (round 8) — roster now 11 games
 - **Ghost Grabbers** (`games/ghost.js`): 3×3 room house, beam-cone capture (5s),
   captured ghosts → assistant hunters w/ minimap pings; giggle+glimpse hints;
