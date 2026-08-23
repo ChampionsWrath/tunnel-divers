@@ -1,25 +1,26 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=11';
-import * as audio from './audio.js?v=11';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=11';
-import { Net, makeRoomCode } from './net.js?v=11';
-import tunnel from './games/tunnel.js?v=11';
-import stack from './games/stack.js?v=11';
-import crown from './games/crown.js?v=11';
-import brain from './games/brain.js?v=11';
-import blast from './games/blast.js?v=11';
-import food from './games/food.js?v=11';
-import homerun from './games/homerun.js?v=11';
-import trivia from './games/trivia.js?v=11';
-import ghost from './games/ghost.js?v=11';
-import greed from './games/greed.js?v=11';
-import lava from './games/lava.js?v=11';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=12';
+import * as audio from './audio.js?v=12';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=12';
+import { Net, makeRoomCode } from './net.js?v=12';
+import tunnel from './games/tunnel.js?v=12';
+import stack from './games/stack.js?v=12';
+import crown from './games/crown.js?v=12';
+import brain from './games/brain.js?v=12';
+import blast from './games/blast.js?v=12';
+import food from './games/food.js?v=12';
+import homerun from './games/homerun.js?v=12';
+import trivia from './games/trivia.js?v=12';
+import ghost from './games/ghost.js?v=12';
+import greed from './games/greed.js?v=12';
+import lava from './games/lava.js?v=12';
+import { createBoard } from './board.js?v=12';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
-  { id: 'party', name: 'Board Game', icon: '🎲', desc: 'All minigames, placement points, crown the champion. (Board coming soon — gauntlet rules for now.)' },
+  { id: 'party', name: 'Board Game', icon: '🎲', desc: 'THE CHAOTIC BOARDWALK — dice, coins, shops, piñatas, item cards, cosmetic steals… and a minigame every turn. Highest coins+cosmetics wins.' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
   { id: 'stack', name: stack.name, icon: stack.icon, desc: stack.desc },
   { id: 'crown', name: crown.name, icon: crown.icon, desc: crown.desc },
@@ -135,6 +136,20 @@ function renderLobby() {
     });
     grid.appendChild(b);
   }
+  if (S.mode === 'party') {   // board length selector
+    const row = document.createElement('div');
+    row.style.gridColumn = '1 / -1';
+    row.innerHTML = '<div class="secLbl" style="margin:4px 0 4px">BOARD LENGTH</div>';
+    const chips = document.createElement('div'); chips.className = 'chips';
+    for (const t of [8, 14, 20]) {
+      const c = document.createElement('button');
+      c.className = 'cchip' + ((S.boardTurns || 20) === t ? ' sel' : '');
+      c.textContent = t + ' turns';
+      c.addEventListener('click', () => { S.boardTurns = t; audio.sfx.ui(); renderLobby(); });
+      chips.appendChild(c);
+    }
+    row.appendChild(chips); grid.appendChild(row);
+  }
   $('btnStart').disabled = !!(S.net && !S.net.isHost);
   $('btnStart').textContent = S.net && !S.net.isHost ? 'HOST STARTS…' : 'START ▶';
 }
@@ -184,6 +199,7 @@ async function goOnline(asHost) {
     else if (t === 'start') launch(p.mode, p.seed, true);
     else if (t === 'next' && S.gauntlet) nextRound(true);
     else if (t === 'ready') { S.readySet[p.id] = true; updateIntroUI(); checkAllReady(); }
+    else if (t === 'bd' && S.boardObj) S.boardObj.applyAct(p, true);   // board events survive minigames
     else if (S.gameNet) S.gameNet(t, p, from);
   };
   show('lobby'); renderLobby();
@@ -222,19 +238,39 @@ $('btnStart').addEventListener('click', () => {
 });
 function launch(mode, seed, fromNet) {
   const players = lobbyPlayers();
-  if (mode === 'party') {
-    const rng = mulberry32(seed);
-    // 11 games is a marathon — a Board Game night is 5 random picks
-    const rounds = ['tunnel', 'stack', 'crown', 'brain', 'blast', 'food', 'homerun', 'trivia', 'ghost', 'greed', 'lava']
-      .sort(() => rng() - 0.5).slice(0, 5);
-    S.gauntlet = { rounds, round: 0, pts: {}, seed, players };
-    for (const p of players) S.gauntlet.pts[p.id] = 0;
-    startGame(rounds[0], seed + 1, players);
-  } else {
-    S.gauntlet = null;
-    startGame(mode, seed, players);
-  }
+  if (mode === 'party') startBoard(seed, players);
+  else { S.gauntlet = null; startGame(mode, seed, players); }
 }
+/* -------- THE CHAOTIC BOARDWALK: the board wraps the whole minigame roster -------- */
+function startBoard(seed, players) {
+  S.gauntlet = null; S.pending = null; S.countdown = 0; S.gameNet = null;
+  calibrateTilt(); clearTouch();
+  show('game');
+  $('introPanel').style.display = 'none';
+  S.boardObj = createBoard({
+    cv, g, dim, players, seed: seed >>> 0,
+    net: S.net, onNet: null,           // board traffic is routed explicitly (survives minigames)
+    input: getInput,
+    audio: { sfx: audio.sfx, setMusicIntensity: audio.setMusicIntensity },
+    maxTurns: S.boardTurns || 20,
+    gameIds: Object.keys(GAMES),
+    launchMinigame: (gid, sd) => {
+      S.boardStash = S.boardObj;       // pause the board; the minigame takes the stage
+      startGame(gid, sd, S.boardObj.players.map(p => ({ ...p })));
+    },
+    end: rows => {
+      S.boardObj = null; S.boardStash = null;
+      if (S.inst) { S.inst.dispose(); S.inst = null; }
+      S.lastResults = { gameId: 'party', rows: rows.sort((a, b) => b.score - a.score) };
+      renderResults(); show('results'); audio.sfx.win(); audio.setMusicIntensity(0.3);
+    },
+  });
+  S.inst = S.boardObj;
+}
+// spec hook: minigame results flow back to the board layer
+window.OnMinigameComplete = function (resultsArray, gameId) {
+  if (S.boardObj) S.boardObj.onMinigameComplete(resultsArray, gameId);
+};
 /* Every minigame opens Mario Party-style: a live PRACTICE arena + how-to card;
    all human players ready up, then a 3-2-1 countdown into the real game. */
 function startGame(gameId, seed, players) {
@@ -336,6 +372,18 @@ function checkAllReady() {
 function onGameEnd(gameId, results) {
   if (S.inst) { S.inst.dispose(); S.inst = null; }
   S.gameNet = null;
+  // a board-night minigame: hand results back to the boardwalk, no results screen
+  if (S.boardStash) {
+    const board = S.boardStash; S.boardStash = null;
+    const boardIds = new Set(board.players.map(p => p.id));
+    const ranked = results.filter(r => boardIds.has(r.id)).sort((a, b) => b.score - a.score);
+    const resultsArray = ranked.map((r, i) => ({ playerId: r.id, rank: i + 1, score: r.score }));
+    S.inst = board;
+    show('game');
+    $('introPanel').style.display = 'none';
+    window.OnMinigameComplete(resultsArray, gameId);
+    return;
+  }
   const players = S.gauntlet ? S.gauntlet.players : lobbyPlayers();
   const known = new Set([...players.map(p => p.id), ...S.locals.map(p => p.id)]);
   const rows = results
@@ -357,7 +405,7 @@ function onGameEnd(gameId, results) {
 }
 function renderResults() {
   const { gameId, rows } = S.lastResults;
-  const game = GAMES[gameId];
+  const game = gameId === 'party' ? { icon: '🎪', name: 'The Chaotic Boardwalk' } : GAMES[gameId];
   const gl = S.gauntlet;
   $('resTitle').textContent = game.icon + ' ' + game.name.toUpperCase() +
     (gl ? ' — ROUND ' + (gl.round + 1) + '/' + gl.rounds.length : '');
@@ -406,6 +454,8 @@ $('btnNext').addEventListener('click', () => {
 $('btnToLobby').addEventListener('click', () => { audio.sfx.ui(); S.gauntlet = null; show('lobby'); renderLobby(); });
 $('btnQuit').addEventListener('click', () => {
   audio.sfx.ui();
+  if (S.boardStash) { S.boardStash.dispose(); S.boardStash = null; }
+  if (S.boardObj) { S.boardObj = null; }
   if (S.inst) { S.inst.dispose(); S.inst = null; }
   S.gauntlet = null; S.pending = null; S.gameNet = null; S.countdown = 0;
   $('introPanel').style.display = 'none';
