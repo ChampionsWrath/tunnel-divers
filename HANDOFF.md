@@ -22,6 +22,21 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 12) — board visuals v2 (Mario Party cam)
+- Sam rejected the flat zoomed-out board (screenshot vs Mario Party Superstars).
+  board.js render v2: camera LOCKED to active player (update() smooths
+  camX/camY/zoom; splash+end zoom out to whole park), extruded chunky tiles,
+  plank paths, parallax ferris/sun/pier, drawDiverStand characters ON tiles,
+  dice above head, Mario-style top chips w/ rank. proj(x,y) is the projection;
+  nodeXY() returns projected coords (branch taps hit-test against it).
+- character.js: drawDiverStand (standing front view) renders ALL 8 cosmetics
+  on the body; drawDiverTop takes cos[] (crown/prop/nose/cape). Minigames
+  (crown/food/lava/ghost) pass player.cosmetics through — collect a crown on
+  the board, wear it in the next minigame. THE RULE: any new cosmetic must be
+  drawn in both views.
+- ⚠ sub-imports must be version-stamped too: character.js is imported as
+  '../character.js?v=13' everywhere — bump that stamp when character.js changes.
+
 ## Session 2026-08-22 (round 11) — ⭐ THE BOARD IS REAL ⭐
 - `arcade/js/board.js` = The Chaotic Boardwalk, full engine per Sam's spec
   (see commit ad1ef7e for the complete feature list). Key architecture:
