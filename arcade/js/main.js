@@ -1,21 +1,21 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=8';
-import * as audio from './audio.js?v=8';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=8';
-import { Net, makeRoomCode } from './net.js?v=8';
-import tunnel from './games/tunnel.js?v=8';
-import stack from './games/stack.js?v=8';
-import crown from './games/crown.js?v=8';
-import brain from './games/brain.js?v=8';
-import blast from './games/blast.js?v=8';
-import food from './games/food.js?v=8';
-import homerun from './games/homerun.js?v=8';
-import trivia from './games/trivia.js?v=8';
-import ghost from './games/ghost.js?v=8';
-import greed from './games/greed.js?v=8';
-import lava from './games/lava.js?v=8';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=9';
+import * as audio from './audio.js?v=9';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=9';
+import { Net, makeRoomCode } from './net.js?v=9';
+import tunnel from './games/tunnel.js?v=9';
+import stack from './games/stack.js?v=9';
+import crown from './games/crown.js?v=9';
+import brain from './games/brain.js?v=9';
+import blast from './games/blast.js?v=9';
+import food from './games/food.js?v=9';
+import homerun from './games/homerun.js?v=9';
+import trivia from './games/trivia.js?v=9';
+import ghost from './games/ghost.js?v=9';
+import greed from './games/greed.js?v=9';
+import lava from './games/lava.js?v=9';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -89,12 +89,22 @@ function lobbyPlayers() {
     local: r.nid === S.net.selfId, slot: 0, bot: false,
   }));
 }
+function netStatusLine() {
+  if (!S.net) return 'same-device party — add players & bots';
+  const n = S.net.peerCount(), relays = S.net.relayCount();
+  const alone = n === 0, waited = (Date.now() - S.net.joinedAt) / 1000;
+  let line = (S.net.isHost ? 'code ' + S.code + ' — share it! ' : '') + (n + 1) + ' in room';
+  if (relays >= 0) line += ' · ' + relays + ' relay' + (relays === 1 ? '' : 's');
+  if (alone) {
+    if (relays === 0 && waited > 5) line = '⚠ can\'t reach the relays — check your connection';
+    else if (waited > 20) line = '⚠ nobody found yet — same code on everyone\'s screen? Have friends refresh the page (old versions can\'t join new rooms)';
+    else line += ' · 🔎 looking for players…';
+  }
+  return line;
+}
 function renderLobby() {
   $('lobbyTitle').textContent = S.net ? 'ROOM ' + S.code : 'PARTY LOBBY';
-  $('roomLine').textContent = S.net ?
-    (S.net.isHost ? 'you are hosting — share the code' : 'connected') +
-    ' · ' + (S.net.peerCount() + 1) + ' online' :
-    'same-device party — add players & bots';
+  $('roomLine').textContent = netStatusLine();
   const list = $('playerList'); list.innerHTML = '';
   const ps = lobbyPlayers();
   ps.forEach((p, i) => {
@@ -162,6 +172,12 @@ async function goOnline(asHost) {
     await S.net.join(code, { name: S.profile.name }, asHost);
   } catch (e) { $('netStatus').textContent = '⚠ ' + e.message; S.net = null; return; }
   S.code = code; $('netStatus').textContent = '';
+  // keep the status line honest while waiting (relay health, hints)
+  if (S._lobbyTick) clearInterval(S._lobbyTick);
+  S._lobbyTick = setInterval(() => {
+    if (S.screen === 'lobby' && S.net) $('roomLine').textContent = netStatusLine();
+    else if (!S.net) { clearInterval(S._lobbyTick); S._lobbyTick = null; }
+  }, 1500);
   S.net.onPeers = () => { if (S.screen === 'lobby') renderLobby(); };
   S.net.onMsg = (t, p, from) => {
     if (t === 'mode') { S.mode = p.mode; if (S.screen === 'lobby') renderLobby(); }
