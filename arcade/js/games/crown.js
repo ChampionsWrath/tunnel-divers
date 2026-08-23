@@ -2,7 +2,7 @@
 // Walls are bouncy barriers; a knocked crown rockets off and ricochets — chase it.
 // Holder is slower but heavier (knockback-resistant). Bots fill to 4.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js';
+import { drawDiverTop } from '../character.js?v=13';
 
 const T_LIMIT = 75, ACC = 2300, DRAG = 3.0, VMAX = 640, DASH_CD = 1.2, PR = 22;
 const HALF = Math.PI / 2;
@@ -38,7 +38,7 @@ class CrownGame {
         name: base ? base.name : ['CHAD', 'BLINKY', 'MOOSE', 'GARY'][i % 4],
         color: base ? base.color : ['#ffb84d', '#66e0c9', '#d5b3ff', '#ff8a5c'][i % 4],
         local: base ? base.local : false, slot: base ? base.slot : -1,
-        bot: base ? !!base.bot : true, isFill: !base,
+        bot: base ? !!base.bot : true, isFill: !base, cos: base && base.cosmetics,
         x: Math.cos(a) * 0.55, y: Math.sin(a) * 0.55,
         vx: 0, vy: 0, crownT: 0, dashCd: 0, dashT: 0, fx: 1, fy: 0,
         wob: this.rng() * TAU, squash: 0, role: i % 3, grabT: 0,
@@ -342,7 +342,7 @@ class CrownGame {
       g.fillStyle = 'rgba(0,0,0,0.4)';
       g.beginPath(); g.ellipse(px, py + PR * 0.72, PR * 0.9, PR * 0.4, 0, 0, TAU); g.fill();
       drawDiverTop(g, {
-        x: px, y: py, r: PR, color: p.color, t: p.wob / 9,
+        x: px, y: py, r: PR, color: p.color, t: p.wob / 9, cos: p.cos,
         vx: p.vx, vy: p.vy, speedNorm: sp, squash: p.squash,
         rot: Math.atan2(p.fy, p.fx) * 0.15 * sp,
       });

@@ -6,8 +6,35 @@ import { TAU, clamp } from './util.js';
 
 export const SKIN = '#ffd9b3', OUTLINE = '#14100a', GOGGLE = '#2d3436', LENS = '#9ad3ff';
 
+/* ---- cosmetic layers: one look, every game, updating as you collect ---- */
+function headwear(cos) {
+  if (!cos) return null;
+  if (cos.includes('crown')) return 'crown';
+  if (cos.includes('prop')) return 'prop';
+  return null;
+}
+function drawCrownAt(g, x, y, s) {
+  g.fillStyle = '#ffd23f'; g.strokeStyle = OUTLINE; g.lineWidth = 2 * s;
+  g.beginPath();
+  g.moveTo(x - 8 * s, y + 4 * s); g.lineTo(x - 8 * s, y - 3 * s); g.lineTo(x - 4 * s, y);
+  g.lineTo(x, y - 6 * s); g.lineTo(x + 4 * s, y); g.lineTo(x + 8 * s, y - 3 * s); g.lineTo(x + 8 * s, y + 4 * s);
+  g.closePath(); g.fill(); g.stroke();
+}
+function drawPropAt(g, x, y, s, t) {
+  g.fillStyle = '#e04040'; g.strokeStyle = OUTLINE; g.lineWidth = 2 * s;
+  g.beginPath(); g.arc(x, y + 2 * s, 6 * s, Math.PI, TAU); g.fill(); g.stroke();
+  g.strokeStyle = OUTLINE; g.lineWidth = 1.6 * s;
+  g.beginPath(); g.moveTo(x, y + 1 * s); g.lineTo(x, y - 4 * s); g.stroke();
+  const a = (t || 0) * 14;
+  g.fillStyle = '#ffd23f';
+  g.save(); g.translate(x, y - 4 * s); g.rotate(a);
+  g.fillRect(-8 * s, -1.2 * s, 16 * s, 2.4 * s); g.strokeRect(-8 * s, -1.2 * s, 16 * s, 2.4 * s);
+  g.restore();
+}
+
 /* top-down arena view (Crown Carriers, Food Flash…)
-   o: {x, y, r, color, t, vx?, vy?, speedNorm?, squash?, hat?: 'none'|'paper', mouth?: 0..1} */
+   o: {x, y, r, color, t, vx?, vy?, speedNorm?, squash?, hat?: 'none'|'paper',
+       mouth?: 0..1, cos?: string[] (cosmetic ids)} */
 export function drawDiverTop(g, o) {
   const r = o.r, sp = o.speedNorm != null ? o.speedNorm :
     clamp(Math.hypot(o.vx || 0, o.vy || 0) / 640, 0, 1);
@@ -42,12 +69,99 @@ export function drawDiverTop(g, o) {
   const mo = o.mouth != null ? o.mouth : sp;
   g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1.5, r * 0.09);
   g.beginPath(); g.arc(0, r * 0.27, r * 0.12 + mo * r * 0.16, 0.12 * Math.PI, 0.88 * Math.PI); g.stroke();
+  // cosmetics visible from above
+  if (o.cos) {
+    if (o.cos.includes('cape')) {
+      g.globalAlpha = 0.7; g.fillStyle = '#39ffb4';
+      g.beginPath(); g.arc(0, r * 0.55, r * 0.85, 0.15 * Math.PI, 0.85 * Math.PI); g.fill();
+      g.globalAlpha = 1;
+    }
+    if (o.cos.includes('nose')) {
+      g.fillStyle = '#e04040'; g.strokeStyle = OUTLINE; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(0, r * 0.06, r * 0.18, 0, TAU); g.fill(); g.stroke();
+    }
+  }
+  const hw = headwear(o.cos);
+  if (hw === 'crown') drawCrownAt(g, 0, -r * 0.72, r / 12);
+  else if (hw === 'prop') drawPropAt(g, 0, -r * 0.78, r / 13, o.t);
   // hats
-  if (o.hat === 'paper') {
+  if (o.hat === 'paper' && !hw) {
     g.fillStyle = '#fff'; g.strokeStyle = OUTLINE; g.lineWidth = 2.5;
     g.beginPath(); g.moveTo(-r * 0.65, -r * 0.62); g.lineTo(0, -r * 1.35); g.lineTo(r * 0.65, -r * 0.62);
     g.closePath(); g.fill(); g.stroke();
   }
+  g.restore();
+}
+
+/* full standing front view — THE board model. Local units: ~56 tall, feet at y=28.
+   o: {x, y, scale, color, t, cos?: string[], mood?: 'idle'|'cheer'} */
+export function drawDiverStand(g, o) {
+  const cos = o.cos || [];
+  g.save(); g.translate(o.x, o.y); g.scale(o.scale, o.scale);
+  const bob = Math.sin((o.t || 0) * 2.6) * 1.4;
+  const cheer = o.mood === 'cheer' ? Math.abs(Math.sin((o.t || 0) * 8)) * 6 : 0;
+  g.translate(0, bob - cheer);
+  g.lineCap = 'round';
+  // neon cape behind
+  if (cos.includes('cape')) {
+    const wave = Math.sin((o.t || 0) * 3) * 2.5;
+    const cg = g.createLinearGradient(0, -14, 0, 26);
+    cg.addColorStop(0, '#39ffb4'); cg.addColorStop(1, '#2bd9ff');
+    g.fillStyle = cg; g.strokeStyle = OUTLINE; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(-9, -12); g.lineTo(9, -12);
+    g.lineTo(13 + wave, 24); g.lineTo(-13 - wave, 24); g.closePath(); g.fill(); g.stroke();
+  }
+  // legs
+  const bootC = cos.includes('boots') ? '#7a8794' : '#2b6cb0';
+  g.strokeStyle = bootC; g.lineWidth = cos.includes('boots') ? 8 : 6;
+  g.beginPath(); g.moveTo(-5, 10); g.lineTo(-6, 24); g.stroke();
+  g.beginPath(); g.moveTo(5, 10); g.lineTo(6, 24); g.stroke();
+  // feet
+  g.fillStyle = cos.includes('boots') ? '#57534e' : cos.includes('shoes') ? '#ffd23f' : '#3d3935';
+  g.strokeStyle = OUTLINE; g.lineWidth = 2;
+  roundRect(g, -11, 24, 9, cos.includes('boots') ? 6.5 : 5, 2.5); g.fill(); g.stroke();
+  roundRect(g, 2, 24, 9, cos.includes('boots') ? 6.5 : 5, 2.5); g.fill(); g.stroke();
+  // duck suit ring around the torso
+  if (cos.includes('duck')) {
+    g.fillStyle = '#ffd23f'; g.strokeStyle = OUTLINE; g.lineWidth = 2.5;
+    g.beginPath(); g.ellipse(0, 4, 16, 9, 0, 0, TAU); g.fill(); g.stroke();
+    g.beginPath(); g.arc(-15, 0, 5, 0, TAU); g.fill(); g.stroke();     // duck head
+    g.fillStyle = '#e07326';
+    g.beginPath(); g.moveTo(-20, 0); g.lineTo(-25, 1.5); g.lineTo(-20, 3); g.closePath(); g.fill();
+    g.fillStyle = OUTLINE; g.beginPath(); g.arc(-16, -1.5, 1, 0, TAU); g.fill();
+  }
+  // torso
+  g.fillStyle = o.color; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  roundRect(g, -10, -8, 20, 20, 8); g.fill(); g.stroke();
+  // arms (idle sway / cheer up)
+  g.strokeStyle = shade(o.color); g.lineWidth = 5.5;
+  const armY = o.mood === 'cheer' ? -14 : 6;
+  g.beginPath(); g.moveTo(-9, -3); g.lineTo(-14, armY + Math.sin((o.t || 0) * 2.6) * 1.5); g.stroke();
+  g.beginPath(); g.moveTo(9, -3); g.lineTo(14, armY - Math.sin((o.t || 0) * 2.6) * 1.5); g.stroke();
+  // head
+  g.fillStyle = SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  g.beginPath(); g.arc(0, -17, 10, 0, TAU); g.fill(); g.stroke();
+  // goggles
+  g.fillStyle = GOGGLE; roundRect(g, -8.5, -21.5, 17, 6, 3); g.fill();
+  g.fillStyle = LENS;
+  g.beginPath(); g.arc(-4, -18.5, 2.6, 0, TAU); g.fill();
+  g.beginPath(); g.arc(4, -18.5, 2.6, 0, TAU); g.fill();
+  // face: burger mask covers it, clown nose sits on it
+  if (cos.includes('burger')) {
+    g.font = '11px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('🍔', 0, -11.5); g.textBaseline = 'alphabetic';
+  } else {
+    g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(0, -12.5, 2.6, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+  }
+  if (cos.includes('nose')) {
+    g.fillStyle = '#e04040'; g.strokeStyle = OUTLINE; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(0, -15.5, 2.4, 0, TAU); g.fill(); g.stroke();
+  }
+  // headwear (crown beats propeller)
+  const hw = headwear(cos);
+  if (hw === 'crown') drawCrownAt(g, 0, -28, 1);
+  else if (hw === 'prop') drawPropAt(g, 0, -27, 1, o.t);
   g.restore();
 }
 
