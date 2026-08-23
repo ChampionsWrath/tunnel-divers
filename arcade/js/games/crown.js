@@ -2,7 +2,7 @@
 // Walls are bouncy barriers; a knocked crown rockets off and ricochets — chase it.
 // Holder is slower but heavier (knockback-resistant). Bots fill to 4.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=13';
+import { drawDiverTop } from '../character.js?v=14';
 
 const T_LIMIT = 75, ACC = 2300, DRAG = 3.0, VMAX = 640, DASH_CD = 1.2, PR = 22;
 const HALF = Math.PI / 2;

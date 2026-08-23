@@ -1,22 +1,22 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=13';
-import * as audio from './audio.js?v=13';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=13';
-import { Net, makeRoomCode } from './net.js?v=13';
-import tunnel from './games/tunnel.js?v=13';
-import stack from './games/stack.js?v=13';
-import crown from './games/crown.js?v=13';
-import brain from './games/brain.js?v=13';
-import blast from './games/blast.js?v=13';
-import food from './games/food.js?v=13';
-import homerun from './games/homerun.js?v=13';
-import trivia from './games/trivia.js?v=13';
-import ghost from './games/ghost.js?v=13';
-import greed from './games/greed.js?v=13';
-import lava from './games/lava.js?v=13';
-import { createBoard } from './board.js?v=13';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=14';
+import * as audio from './audio.js?v=14';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=14';
+import { Net, makeRoomCode } from './net.js?v=14';
+import tunnel from './games/tunnel.js?v=14';
+import stack from './games/stack.js?v=14';
+import crown from './games/crown.js?v=14';
+import brain from './games/brain.js?v=14';
+import blast from './games/blast.js?v=14';
+import food from './games/food.js?v=14';
+import homerun from './games/homerun.js?v=14';
+import trivia from './games/trivia.js?v=14';
+import ghost from './games/ghost.js?v=14';
+import greed from './games/greed.js?v=14';
+import lava from './games/lava.js?v=14';
+import { createBoard } from './board.js?v=14';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -42,6 +42,13 @@ function resize() {
   dim.W = window.innerWidth; dim.H = window.innerHeight; dim.V = Math.min(dim.W, dim.H) / 700;
   cv.width = Math.round(dim.W * dpr); cv.height = Math.round(dim.H * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // canvas paints under the notch — HUDs offset by the real safe areas
+  const probe = document.getElementById('safeProbe');
+  if (probe) {
+    const cs = getComputedStyle(probe);
+    dim.safeTop = parseFloat(cs.paddingTop) || 0;
+    dim.safeBottom = parseFloat(cs.paddingBottom) || 0;
+  } else { dim.safeTop = 0; dim.safeBottom = 0; }
 }
 addEventListener('resize', resize); addEventListener('orientationchange', resize);
 resize(); attachTouch(cv);

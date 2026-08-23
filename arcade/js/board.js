@@ -3,7 +3,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=13';
+import { drawDiverTop, drawDiverStand } from './character.js?v=14';
 
 function shadeCol(hex, f) {
   try {
@@ -92,7 +92,23 @@ class Board {
     ctx.cv.addEventListener('pointerdown', this._pd);
     if (ctx.onNet) ctx.onNet((t, p) => { if (t === 'bd') this.applyAct(p, true); });
     this.isNetHost = !ctx.net || ctx.net.isHost;
+    this.mapView = false;
+    this.decor = this.buildDecor();
     this.showBanner('🎪 THE CHAOTIC BOARDWALK 🎪', '#ffd23f', 2.2);
+  }
+  // carnival props scattered around the routes (world-anchored, depth-sorted)
+  buildDecor() {
+    const d = [];
+    const put = (kind, x, y, s) => d.push({ kind, x, y, s: s || 1 });
+    // inside the loop: the fairground
+    put('tent', 38, 30, 1.3); put('tent', 60, 26, 1); put('carousel', 50, 40, 1.1);
+    put('balloons', 44, 22, 1); put('popcorn', 58, 38, 1); put('cotton', 41, 44, 1);
+    // around the outside
+    put('tent', 12, 12, 0.9); put('balloons', 88, 10, 1); put('popcorn', 95, 40, 0.9);
+    put('cotton', 6, 44, 0.9); put('balloons', 20, 58, 0.9); put('tent', 82, 56, 0.95);
+    put('lamp', 28, 6, 1); put('lamp', 72, 6, 1); put('lamp', 4, 30, 1); put('lamp', 96, 26, 1);
+    put('lamp', 30, 60, 1); put('lamp', 70, 61, 1);
+    return d;
   }
   cur() { return this.players[this.playerIdx]; }
   score(p) { return p.coins + p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0); }
@@ -131,17 +147,18 @@ class Board {
   startTurnPlayer() {
     const p = this.cur();
     this.showBanner('TURN ' + this.turn + '/' + this.maxTurns + ' — ' + p.name, p.color, 1.4);
-    this.state = 'item'; this.stateT = 0; this.botT = 1.2 + this.rng() * 0.8;
-    if (!p.items.length || p.pending) { this.state = 'preroll'; }
+    this.state = 'menu'; this.stateT = 0; this.botT = 1.2 + this.rng() * 0.8;
+    this.dice = null; this.mapView = false;
   }
-  enterRoll() { this.state = 'roll'; this.stateT = 0; this.botT = 0.9 + this.rng() * 0.8; this.dice = null; }
+  enterRoll() { this.state = 'menu'; this.stateT = 0; this.botT = 0.9 + this.rng() * 0.8; this.dice = null; }
   doPlayItem(idx) {
     const p = this.cur();
     const it = p.items.splice(idx, 1)[0];
     if (it === 'shield') { p.shield = true; this.pop(p.name + ' raises a 🛡️ Cardboard Shield!'); }
     else { p.pending = it; this.pop(p.name + ' plays ' + ITEMS[it].icon + ' ' + ITEMS[it].name + '!'); }
     this.ctx.audio.sfx.pow();
-    this.enterRoll();
+    this.overlay = null;
+    this.state = 'menu'; this.stateT = 0;
   }
   doRoll(v, dir) {
     const p = this.cur();
@@ -358,11 +375,12 @@ class Board {
     this.tt += rdt; this.stateT += rdt; this.bannerT -= rdt;
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
     const { W, H } = this.ctx.dim;
-    const Zfit = Math.min(W / 112, (H * 0.72) / 70), Zgame = Math.min(W, H) / 26;
-    const zoomT = this.state === 'splash' || this.state === 'end' ? Zfit : Zgame;
+    const Zfit = Math.min(W / 118, (H * 0.68) / 74), Zgame = Math.min(W, H) / 34;
+    const wide = this.state === 'splash' || this.state === 'end' || this.mapView;
+    const zoomT = wide ? Zfit : Zgame;
     if (this.zoom === undefined) { this.zoom = Zfit; this.camX = 50; this.camY = 33; }
     this.zoom += (zoomT - this.zoom) * Math.min(1, rdt * 2.2);
-    const foc = this.state === 'splash' || this.state === 'end' ? { ax: 50, ay: 33 } : this.cur();
+    const foc = wide ? { ax: 50, ay: 33 } : this.cur();
     this.camX += (foc.ax - this.camX) * Math.min(1, rdt * 4);
     this.camY += (foc.ay - this.camY) * Math.min(1, rdt * 4);
     for (let i = this.pops.length; i--;) { this.pops[i].t += rdt; if (this.pops[i].t > this.pops[i].dur) this.pops.splice(i, 1); }
@@ -377,31 +395,26 @@ class Board {
     if (this.overlay) { this.handleOverlay(rdt, p, auth, clicks); this.clicks.length = 0; return; }
     switch (this.state) {
       case 'splash': if (this.stateT > 2.2) this.startTurnPlayer(); break;
-      case 'item': {
+      case 'menu': {
         if (p.bot && auth && (this.botT -= rdt) <= 0) {
-          // bots: shield early, movement items when mid-pack
-          const pick = p.items.findIndex(() => this.rng() < 0.5);
-          if (pick >= 0) this.act('playItem', { idx: pick }); else this.act('skipItem', {});
+          // bots: maybe arm an item, then roll
+          if (p.items.length && !p.pending && this.rng() < 0.5) {
+            this.act('playItem', { idx: Math.floor(this.rng() * p.items.length) });
+            this.botT = 0.7 + this.rng() * 0.5;
+          } else this.rollNow();
           break;
         }
         if (this.myTurn()) {
           const hit = this.hitButton(clicks);
-          if (hit != null) {
-            if (hit.id === 'skip') this.act('skipItem', {});
-            else if (hit.id.startsWith('item')) this.act('playItem', { idx: +hit.id.slice(4) });
-          } else if (inp.act) this.act('skipItem', {});
+          if (hit) {
+            if (hit.id === 'roll' && !this.mapView) this.rollNow();
+            else if (hit.id === 'items') { this.overlay = { kind: 'items', t: 0 }; this.ctx.audio.sfx.ui(); }
+            else if (hit.id === 'map') { this.mapView = !this.mapView; this.ctx.audio.sfx.ui(); }
+          } else if (inp.act && !this.mapView) this.rollNow();
         }
         break;
       }
       case 'preroll': if (this.stateT > 0.4) this.enterRoll(); break;
-      case 'roll': {
-        if (p.bot && auth && (this.botT -= rdt) <= 0) { this.rollNow(); break; }
-        if (this.myTurn()) {
-          const hit = this.hitButton(clicks);
-          if ((hit && hit.id === 'roll') || inp.act) this.rollNow();
-        }
-        break;
-      }
       case 'dicing': {
         this.dice.t += rdt;
         if (this.dice.t > 1.0 && !this.dice.settled) {
@@ -423,10 +436,12 @@ class Board {
           break;
         }
         if (this.myTurn() && clicks.length) {
+          const hit = this.hitButton(clicks);
+          if (hit && hit.id.startsWith('br')) { this.act('branch', { n: +hit.id.slice(2) }); break; }
           for (const [cx2, cy2] of clicks) {
             for (const nid of this.branchOpts) {
               const [nx, ny] = this.nodeXY(nid);
-              if (Math.hypot(cx2 - nx, cy2 - ny) < this.S * 5) { this.act('branch', { n: nid }); break; }
+              if (Math.hypot(cx2 - nx, cy2 - ny) < (this.zoom || 10) * 4.5) { this.act('branch', { n: nid }); break; }
             }
           }
         }
@@ -472,6 +487,16 @@ class Board {
   }
   handleOverlay(rdt, p, auth, clicks) {
     const o = this.overlay;
+    if (o.kind === 'items') {
+      if (this.myTurn()) {
+        const hit = this.hitButton(clicks);
+        if (hit) {
+          if (hit.id === 'cancel') { this.overlay = null; this.ctx.audio.sfx.ui(); }
+          else if (hit.id.startsWith('use')) this.act('playItem', { idx: +hit.id.slice(3) });
+        }
+      } else this.overlay = null;
+      return;
+    }
     if (o.kind === 'pinata') {
       if (auth && !o.dropped && o.t > 0.7) {
         o.dropped = true;
@@ -528,48 +553,79 @@ class Board {
   render() {
     const g = this.ctx.g, { W, H } = this.ctx.dim;
     const Z = this.zoom || 10;
-    // dusk sky
-    const sky = g.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#2a1a3e'); sky.addColorStop(0.4, '#8a3a5e'); sky.addColorStop(0.58, '#d4744a'); sky.addColorStop(0.72, '#3a2418'); sky.addColorStop(1, '#171019');
-    g.fillStyle = sky; g.fillRect(0, 0, W, H);
-    // sun + sea shimmer (slow parallax)
-    const sunX = W * 0.72 - (this.camX - 50) * Z * 0.12;
-    g.fillStyle = 'rgba(255,210,63,0.85)';
-    g.beginPath(); g.arc(sunX, H * 0.34, Z * 2.2, 0, TAU); g.fill();
-    g.strokeStyle = 'rgba(255,210,120,0.22)'; g.lineWidth = 2;
-    for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(sunX - Z * 5, H * (0.4 + i * 0.012)); g.lineTo(sunX + Z * 5, H * (0.4 + i * 0.012)); g.stroke(); }
-    // ferris wheel — anchored in the world with depth parallax
-    const fx2 = W / 2 + (-16 - this.camX) * Z * 0.4, fy2 = H * 0.28 - (this.camY - 33) * Z * 0.15, fr = Z * 4.6;
-    g.strokeStyle = 'rgba(20,16,25,0.8)'; g.lineWidth = 3;
-    g.beginPath(); g.arc(fx2, fy2, fr, 0, TAU); g.stroke();
-    for (let i = 0; i < 8; i++) {
-      const a = this.tt * 0.15 + i / 8 * TAU;
-      g.beginPath(); g.moveTo(fx2, fy2); g.lineTo(fx2 + Math.cos(a) * fr, fy2 + Math.sin(a) * fr); g.stroke();
-      g.fillStyle = ['#e04040', '#4d9de0', '#ffd23f', '#3a9d5c'][i % 4];
-      g.beginPath(); g.arc(fx2 + Math.cos(a) * fr, fy2 + Math.sin(a) * fr, Z * 0.35, 0, TAU); g.fill();
+    // the world has a horizon: sky above, ocean strip, then the boardwalk GROUND.
+    // Horizon is world-anchored (above the top of the park) so panning feels real.
+    const [, horizonY] = this.proj(0, -14);
+    const skyBot = Math.max(40, Math.min(H, horizonY));
+    const sky = g.createLinearGradient(0, 0, 0, skyBot);
+    sky.addColorStop(0, '#2a1a3e'); sky.addColorStop(0.6, '#8a3a5e'); sky.addColorStop(1, '#d4744a');
+    g.fillStyle = sky; g.fillRect(0, 0, W, skyBot);
+    // sun on the horizon
+    const sunX = W * 0.7 - (this.camX - 50) * Z * 0.12;
+    g.fillStyle = 'rgba(255,210,63,0.9)';
+    g.beginPath(); g.arc(sunX, skyBot - Z * 1.2, Z * 2.4, 0, TAU); g.fill();
+    // ocean strip
+    const [, oceanBot] = this.proj(0, -8);
+    const og = g.createLinearGradient(0, skyBot, 0, Math.max(skyBot + 1, oceanBot));
+    og.addColorStop(0, '#d4744a'); og.addColorStop(0.3, '#4d6fae'); og.addColorStop(1, '#1d3a6e');
+    g.fillStyle = og; g.fillRect(0, skyBot, W, Math.max(0, oceanBot - skyBot));
+    g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = Math.max(1, Z * 0.1);
+    for (let i = 0; i < 4; i++) {
+      const wy = -13 + i * 1.3, [, py2] = this.proj(0, wy);
+      if (py2 > skyBot && py2 < oceanBot) { g.beginPath(); g.moveTo(0, py2); g.lineTo(W, py2); g.stroke(); }
     }
-    g.beginPath(); g.moveTo(fx2 - fr * 0.7, fy2 + fr * 1.4); g.lineTo(fx2, fy2); g.lineTo(fx2 + fr * 0.7, fy2 + fr * 1.4); g.stroke();
-    // pier planks scrolling under the world
-    g.strokeStyle = 'rgba(90,64,40,0.45)'; g.lineWidth = Math.max(1.5, Z * 0.12);
-    const y0w = this.camY - 46, y1w = this.camY + 46;
-    for (let wy = Math.floor(y0w / 3.2) * 3.2; wy < y1w; wy += 3.2) {
+    // THE GROUND: sandy fairground from the shore down, wooden deck under the park
+    const gg = g.createLinearGradient(0, oceanBot, 0, H);
+    gg.addColorStop(0, '#e0b87e'); gg.addColorStop(0.35, '#c99a5e'); gg.addColorStop(1, '#8a6238');
+    g.fillStyle = gg; g.fillRect(0, Math.max(0, oceanBot), W, H);
+    // deck plank seams
+    g.strokeStyle = 'rgba(90,64,40,0.35)'; g.lineWidth = Math.max(1.2, Z * 0.1);
+    for (let wy = Math.floor((this.camY - 50) / 3.2) * 3.2; wy < this.camY + 50; wy += 3.2) {
       const [, py2] = this.proj(0, wy);
-      if (py2 < -10 || py2 > H + 10) continue;
+      if (py2 < oceanBot || py2 > H + 10) continue;
       g.beginPath(); g.moveTo(0, py2); g.lineTo(W, py2); g.stroke();
     }
-    // path planks between tiles
-    g.lineCap = 'round';
-    for (const n of this.map) for (const nx of n.next) {
-      const m2 = this.map[nx];
-      const [ax2, ay2] = this.proj(n.x, n.y), [bx2, by2] = this.proj(m2.x, m2.y);
-      if (Math.max(ax2, bx2) < -80 || Math.min(ax2, bx2) > W + 80) continue;
-      g.strokeStyle = '#4a3320'; g.lineWidth = Z * 1.7;
-      g.beginPath(); g.moveTo(ax2, ay2 + Z * 0.5); g.lineTo(bx2, by2 + Z * 0.5); g.stroke();
-      g.strokeStyle = '#6b4a2b'; g.lineWidth = Z * 1.3;
-      g.beginPath(); g.moveTo(ax2, ay2); g.lineTo(bx2, by2); g.stroke();
+    // scattered sand speckles + confetti litter (deterministic)
+    for (let i = 0; i < 40; i++) {
+      const fr = Math.sin(i * 127.1) * 43758.5453, f2 = fr - Math.floor(fr);
+      const fr2 = Math.sin(i * 311.7) * 12543.2, f3 = fr2 - Math.floor(fr2);
+      const [sx2, sy2] = this.proj(f2 * 130 - 15, f3 * 90 - 12);
+      if (sx2 < -10 || sx2 > W + 10 || sy2 < oceanBot || sy2 > H) continue;
+      g.fillStyle = i % 5 === 0 ? ['#e04040', '#4d9de0', '#ffd23f'][i % 3] : 'rgba(120,86,48,0.4)';
+      g.fillRect(sx2, sy2, Math.max(1.6, Z * 0.16), Math.max(1.6, Z * 0.16));
     }
-    // depth-sorted world: chunky tiles + standing divers
+    // the WALKWAY: a wide continuous path ribbon the tiles sit on
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const pass of [[Z * 8.2, '#6b4a2b'], [Z * 7.2, '#8a6238'], [Z * 6.6, '#a3784a']]) {
+      g.strokeStyle = pass[1]; g.lineWidth = pass[0];
+      for (const n of this.map) for (const nx of n.next) {
+        const m2 = this.map[nx];
+        const [ax2, ay2] = this.proj(n.x, n.y), [bx2, by2] = this.proj(m2.x, m2.y);
+        if (Math.max(ax2, bx2) < -120 || Math.min(ax2, bx2) > W + 120) continue;
+        g.beginPath(); g.moveTo(ax2, ay2); g.lineTo(bx2, by2); g.stroke();
+      }
+    }
+    // string lights draped along the top of the loop
+    g.lineWidth = Math.max(1.2, Z * 0.09);
+    for (let seg = 0; seg < 4; seg++) {
+      const x0 = 8 + seg * 24, x1 = x0 + 24;
+      const [ax2, ay2] = this.proj(x0, -2), [bx2, by2] = this.proj(x1, -2);
+      if (Math.max(ax2, bx2) < -60 || Math.min(ax2, bx2) > W + 60) continue;
+      g.strokeStyle = 'rgba(20,16,10,0.6)';
+      g.beginPath(); g.moveTo(ax2, ay2); g.quadraticCurveTo((ax2 + bx2) / 2, ay2 + Z * 2.2, bx2, by2); g.stroke();
+      for (let b = 1; b < 6; b++) {
+        const f = b / 6, lx = lerp(ax2, bx2, f), ly = ay2 + Math.sin(f * Math.PI) * Z * 1.6;
+        g.fillStyle = ['#ffd23f', '#e04040', '#4d9de0', '#7dff6a', '#e08bd0'][b % 5];
+        g.beginPath(); g.arc(lx, ly, Math.max(1.6, Z * 0.24), 0, TAU); g.fill();
+      }
+    }
+    // depth-sorted world: decor + chunky tiles + standing divers
     const items = [];
+    for (const dc of this.decor) {
+      const [px2, py2] = this.proj(dc.x, dc.y);
+      if (px2 < -160 || px2 > W + 160 || py2 < -160 || py2 > H + 160) continue;
+      items.push({ py: py2 - 0.2, kind: 'decor', dc, px: px2 });
+    }
     for (const n of this.map) {
       const [px2, py2] = this.proj(n.x, n.y);
       if (px2 < -120 || px2 > W + 120 || py2 < -120 || py2 > H + 140) continue;
@@ -583,16 +639,17 @@ class Board {
     items.sort((a, b) => a.py - b.py);
     for (const it of items) {
       if (it.kind === 'tile') this.drawTile(g, it.n, it.px, it.py, Z);
+      else if (it.kind === 'decor') this.drawDecor(g, it.dc, it.px, it.py, Z);
       else this.drawStanding(g, it.p, it.i, it.px, it.py, Z);
     }
     // dice above the active player's head
-    if ((this.state === 'roll' || this.state === 'dicing') && this.cur()) {
+    if ((this.state === 'menu' || this.state === 'dicing') && this.cur() && !this.mapView) {
       const p = this.cur();
       const [px2, py2] = this.proj(p.ax, p.ay);
-      const ds = Z * 2.2, dy2 = py2 - Z * 9 + Math.sin(this.tt * 3) * Z * 0.3;
+      const ds = Z * 3, dy2 = py2 - Z * 11 + Math.sin(this.tt * 3) * Z * 0.3;
       const shown = this.state === 'dicing' && this.dice
         ? (this.dice.settled ? this.dice.v : 1 + Math.floor(this.tt * 17 % 6))
-        : 1 + Math.floor(this.tt * 5 % 6);
+        : '?';
       g.save(); g.translate(px2, dy2);
       if (!(this.dice && this.dice.settled)) g.rotate(Math.sin(this.tt * 14) * 0.25);
       g.fillStyle = '#f2ece2'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
@@ -626,6 +683,70 @@ class Board {
       g.fillStyle = q.col; g.fillText(q.txt, W / 2, H * 0.3 - q.t * 40);
     }
     g.globalAlpha = 1;
+  }
+  drawDecor(g, dc, px, py, Z) {
+    const s = Z * 0.9 * dc.s;
+    g.lineCap = 'round';
+    if (dc.kind === 'tent') {
+      // striped carnival tent
+      g.fillStyle = '#c94a4a'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+      g.fillRect(px - s * 3, py - s * 2.2, s * 6, s * 2.2); g.strokeRect(px - s * 3, py - s * 2.2, s * 6, s * 2.2);
+      g.beginPath(); g.moveTo(px - s * 3.6, py - s * 2.2); g.lineTo(px, py - s * 5.2); g.lineTo(px + s * 3.6, py - s * 2.2);
+      g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#f2ece2';
+      for (let i = -1; i <= 1; i += 1) {
+        g.beginPath(); g.moveTo(px + i * s * 1.6 - s * 0.5, py - s * 2.25);
+        g.lineTo(px + i * s * 0.35, py - s * 4.6); g.lineTo(px + i * s * 1.6 + s * 0.5, py - s * 2.25);
+        g.closePath(); g.fill();
+      }
+      g.fillStyle = '#ffd23f';
+      g.beginPath(); g.arc(px, py - s * 5.3, s * 0.45, 0, TAU); g.fill(); g.stroke();
+      g.fillStyle = '#3a2418'; g.fillRect(px - s * 0.8, py - s * 1.7, s * 1.6, s * 1.7);
+    } else if (dc.kind === 'balloons') {
+      g.strokeStyle = 'rgba(20,16,10,0.6)'; g.lineWidth = 1.5;
+      const cols = ['#e04040', '#4d9de0', '#ffd23f'];
+      for (let i = 0; i < 3; i++) {
+        const bx2 = px + (i - 1) * s * 1.1, by2 = py - s * 3.4 - (i % 2) * s * 0.8 + Math.sin(this.tt * 1.5 + i) * s * 0.3;
+        g.beginPath(); g.moveTo(px, py); g.lineTo(bx2, by2 + s * 0.9); g.stroke();
+        g.fillStyle = cols[i];
+        g.beginPath(); g.ellipse(bx2, by2, s * 0.8, s, 0, 0, TAU); g.fill(); g.stroke();
+      }
+    } else if (dc.kind === 'popcorn' || dc.kind === 'cotton') {
+      // little snack stall
+      const roofA = dc.kind === 'popcorn' ? '#e04040' : '#e08bd0';
+      g.fillStyle = '#f2ece2'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+      g.fillRect(px - s * 2, py - s * 2.4, s * 4, s * 2.4); g.strokeRect(px - s * 2, py - s * 2.4, s * 4, s * 2.4);
+      g.fillStyle = roofA;
+      for (let i = 0; i < 4; i++) if (i % 2 === 0) g.fillRect(px - s * 2.3 + i * s * 1.15, py - s * 3.2, s * 1.15, s * 0.85);
+      g.strokeRect(px - s * 2.3, py - s * 3.2, s * 4.6, s * 0.85);
+      g.font = Math.round(s * 1.6) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(dc.kind === 'popcorn' ? '🍿' : '🍭', px, py - s * 1.2);
+      g.textBaseline = 'alphabetic';
+    } else if (dc.kind === 'carousel') {
+      g.fillStyle = '#4d9de0'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+      g.beginPath(); g.ellipse(px, py, s * 3.2, s * 1.15, 0, 0, TAU); g.fill(); g.stroke();
+      g.strokeStyle = '#ffd23f'; g.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const a = this.tt * 0.5 + i / 5 * TAU;
+        const hx = px + Math.cos(a) * s * 2.3, hy = py + Math.sin(a) * s * 0.8;
+        g.beginPath(); g.moveTo(hx, hy - s * 2.4); g.lineTo(hx, hy); g.stroke();
+        g.font = Math.round(s * 1.2) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText('🐴', hx, hy - s * 0.6); g.textBaseline = 'alphabetic';
+      }
+      g.fillStyle = '#e04040'; g.strokeStyle = '#14100a';
+      g.beginPath(); g.moveTo(px - s * 3.4, py - s * 2.6); g.lineTo(px, py - s * 4.6); g.lineTo(px + s * 3.4, py - s * 2.6);
+      g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = '#14100a'; g.beginPath(); g.moveTo(px, py - s * 4.6); g.lineTo(px, py); g.stroke();
+    } else if (dc.kind === 'lamp') {
+      g.strokeStyle = '#2c3646'; g.lineWidth = Math.max(2, s * 0.35);
+      g.beginPath(); g.moveTo(px, py); g.lineTo(px, py - s * 4.4); g.stroke();
+      const glow = g.createRadialGradient(px, py - s * 4.8, 1, px, py - s * 4.8, s * 1.8);
+      glow.addColorStop(0, 'rgba(255,236,180,0.9)'); glow.addColorStop(1, 'rgba(255,236,180,0)');
+      g.fillStyle = glow;
+      g.beginPath(); g.arc(px, py - s * 4.8, s * 1.8, 0, TAU); g.fill();
+      g.fillStyle = '#ffeccf'; g.strokeStyle = '#14100a'; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(px, py - s * 4.8, s * 0.55, 0, TAU); g.fill(); g.stroke();
+    }
   }
   drawTile(g, n, px, py, Z) {
     const [col, icon] = NODE_STYLE[n.type];
@@ -680,19 +801,21 @@ class Board {
       g.moveTo(px + ox2, py - Z * 7.4 + bob2); g.lineTo(px + ox2 - Z * 0.9, py - Z * 8.6 + bob2);
       g.lineTo(px + ox2 + Z * 0.9, py - Z * 8.6 + bob2); g.closePath(); g.fill(); g.stroke();
     }
-    // name floats over non-active players so you know who's who
-    if (!active && this.zoom > Math.min(this.ctx.dim.W, this.ctx.dim.H) / 40) {
+    // name floats over non-active players — stacked when they share a tile
+    if (!active && this.zoom > Math.min(this.ctx.dim.W, this.ctx.dim.H) / 44) {
+      const ny2 = py - Z * 6.7 - k * Z * 1.4;
       g.font = '800 ' + Math.round(Z * 1.1) + 'px system-ui'; g.textAlign = 'center';
-      g.fillStyle = 'rgba(10,8,4,0.7)'; g.fillText(p.name, px + ox2 + 1, py - Z * 6.6 + 1);
-      g.fillStyle = p.color; g.fillText(p.name, px + ox2, py - Z * 6.7);
+      g.fillStyle = 'rgba(10,8,4,0.7)'; g.fillText(p.name, px + ox2 + 1, ny2 + 1);
+      g.fillStyle = p.color; g.fillText(p.name, px + ox2, ny2);
     }
   }
   drawChips(g, W, H) {
-    // Mario-style player chips along the top: avatar + coins + star value + rank
+    // Mario-style player chips along the top — pushed below the phone's status bar
+    const safeTop = (this.ctx.dim.safeTop || 0) + 8;
     const n = this.players.length, cw = Math.min(96, (W - 12) / n - 6), ch = 46;
     const ranked = [...this.players].sort((a, b) => this.score(b) - this.score(a));
     this.players.forEach((p, i) => {
-      const x = 6 + i * (cw + 6), y = 8;
+      const x = 6 + i * (cw + 6), y = safeTop;
       const active = this.playerIdx === i && this.state !== 'splash';
       g.fillStyle = active ? 'rgba(42,36,16,0.94)' : 'rgba(16,22,36,0.85)';
       g.strokeStyle = active ? p.color : '#2a3450'; g.lineWidth = 2.5;
@@ -716,7 +839,8 @@ class Board {
       g.fillText(['1st', '2nd', '3rd', '4th'][rank] || (rank + 1) + 'th', x + cw - 5, y + 15);
     });
     g.textAlign = 'right'; g.font = '800 13px system-ui'; g.fillStyle = '#ffeccf';
-    g.fillText('TURN ' + Math.min(this.turn, this.maxTurns) + '/' + this.maxTurns, W - 8, H - 10);
+    g.fillText('TURN ' + Math.min(this.turn, this.maxTurns) + '/' + this.maxTurns,
+      W - 8, H - 10 - (this.ctx.dim.safeBottom || 0));
   }
   addButton(g, id, label, x, y, w, h, active) {
     this.buttons.push({ id, x, y, w, h });
@@ -735,21 +859,43 @@ class Board {
   }
   drawPhaseUI(g, W, H) {
     const p = this.cur(), mine = this.myTurn();
-    const cy = H * 0.79;
+    const cy = H * 0.82 - (this.ctx.dim.safeBottom || 0);
     g.textAlign = 'center';
-    if (this.state === 'item') {
+    if (this.state === 'menu') {
       if (mine) {
-        p.items.forEach((it, i) => this.addButton(g, 'item' + i, ITEMS[it].icon + ' ' + ITEMS[it].name, W / 2 - 150 + i * 105, cy - 26, 100, 34));
-        this.addButton(g, 'skip', 'SKIP ▶', W / 2 + 170 - 60, cy - 26, 90, 34);
-        g.font = '700 12px system-ui'; g.fillStyle = '#93a0bd';
-        g.fillText('ITEM PHASE — play a card or skip', W / 2, cy - 34);
+        if (this.mapView) {
+          this.addButton(g, 'map', '✕ CLOSE MAP', W / 2 - 85, cy - 30, 170, 44);
+        } else {
+          const hasItems = p.items.length > 0 && !p.pending;
+          const bw = 108, gap = 8;
+          const total = bw * (hasItems ? 3 : 2) + gap * (hasItems ? 2 : 1);
+          let x = W / 2 - total / 2;
+          this.addButton(g, 'roll', '🎲 ROLL', x, cy - 30, bw, 46); x += bw + gap;
+          if (hasItems) { this.addButton(g, 'items', '🃏 ITEMS (' + p.items.length + ')', x, cy - 30, bw, 46); x += bw + gap; }
+          this.addButton(g, 'map', '🗺️ MAP', x, cy - 30, bw, 46);
+          if (p.pending) {
+            g.font = '700 12px system-ui'; g.fillStyle = '#ffb84d';
+            g.fillText(ITEMS[p.pending] ? ITEMS[p.pending].icon + ' ' + ITEMS[p.pending].name + ' armed!' : '', W / 2, cy - 40);
+          }
+        }
       } else { g.font = '800 15px system-ui'; g.fillStyle = p.color; g.fillText(p.name + ' is thinking…', W / 2, cy); }
-    } else if (this.state === 'roll') {
-      if (mine) this.addButton(g, 'roll', '🎲 ROLL', W / 2 - 70, cy - 30, 140, 44);
-      else { g.font = '800 15px system-ui'; g.fillStyle = p.color; g.fillText(p.name + ' is rolling…', W / 2, cy); }
     } else if (this.state === 'branch') {
       g.font = '900 17px system-ui'; g.fillStyle = '#ffd23f';
-      g.fillText(mine ? '⑂ FORK! Tap a glowing path' : p.name + ' picks a path…', W / 2, cy);
+      g.fillText(mine ? '⑂ FORK! Pick a path' : p.name + ' picks a path…', W / 2, cy - 46);
+      if (mine) {
+        const me2 = this.cur();
+        const [mx2] = this.proj(me2.ax, me2.ay);
+        const opts = [...this.branchOpts].sort((a, b) => this.nodeXY(a)[0] - this.nodeXY(b)[0]);
+        const bw = Math.min(150, W * 0.42);
+        opts.forEach((nid, i) => {
+          const node = this.map[nid];
+          const [nx2] = this.nodeXY(nid);
+          const dir = nx2 < mx2 ? '⬅' : '➡';
+          const icon = NODE_STYLE[node.type][1];
+          const x = W / 2 - bw - 8 + i * (bw + 16);
+          this.addButton(g, 'br' + nid, dir + ' ' + icon + ' path', x, cy - 30, bw, 44);
+        });
+      }
     } else if (this.state === 'mgIntro') {
       g.font = '900 22px system-ui'; g.fillStyle = '#ffd23f';
       g.fillText('🎲 MINIGAME TIME!', W / 2, cy);
@@ -773,6 +919,25 @@ class Board {
   drawOverlay(g, W, H) {
     const o = this.overlay, p = this.cur(), mine = this.myTurn();
     const bw = Math.min(360, W * 0.88), bx = W / 2 - bw / 2, by = H * 0.2;
+    if (o.kind === 'items') {
+      const bh = 84 + p.items.length * 58;
+      g.fillStyle = 'rgba(10,8,16,0.92)'; g.fillRect(bx, by, bw, bh);
+      g.strokeStyle = '#ffd23f'; g.lineWidth = 3; g.strokeRect(bx, by, bw, bh);
+      g.font = '900 20px system-ui'; g.fillStyle = '#ffd23f'; g.textAlign = 'center';
+      g.fillText('🃏 YOUR CARDS', W / 2, by + 28);
+      let yy = by + 44;
+      p.items.forEach((it, i) => {
+        const def = ITEMS[it];
+        this.addButton(g, 'use' + i, def.icon + ' USE', bx + 12, yy, 92, 34);
+        g.textAlign = 'left'; g.font = '800 13px system-ui'; g.fillStyle = '#ffeccf';
+        g.fillText(def.name, bx + 114, yy + 13);
+        g.font = '700 10.5px system-ui'; g.fillStyle = '#93a0bd';
+        this.wrap(g, def.desc, bx + 114, yy + 26, bw - 126, 12);
+        yy += 58;
+      });
+      this.addButton(g, 'cancel', 'BACK', W / 2 - 60, by + bh - 42, 120, 34);
+      return;
+    }
     if (o.kind === 'shop') {
       const bh = H * 0.46;
       g.fillStyle = 'rgba(10,8,16,0.92)'; g.fillRect(bx, by, bw, bh);
