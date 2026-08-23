@@ -22,6 +22,26 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 11) — ⭐ THE BOARD IS REAL ⭐
+- `arcade/js/board.js` = The Chaotic Boardwalk, full engine per Sam's spec
+  (see commit ad1ef7e for the complete feature list). Key architecture:
+  - Board Game lobby mode → startBoard() in main.js; board instance lives in
+    S.boardObj AND S.inst; minigames stash the board (S.boardStash), run the
+    normal intro/ready/countdown flow, and onGameEnd routes rankings back via
+    window.OnMinigameComplete(resultsArray, gameId) instead of a results screen.
+  - EVERY board mutation flows through act(a,d) → applyAct; online rooms mirror
+    by broadcasting 'bd' events (routed in main's net.onMsg even mid-minigame).
+    Authority = active player's client; net-host simulates bot decisions + does
+    reward math ('rw' broadcast). ⚠ online board untested with real peers.
+  - Board length selector (8/14/20 turns) appears in lobby when party selected.
+  - Map: buildMap() = 28-loop + 2 forks (nodes 5→28-30→10, 17→31-34→23),
+    types via mainType(); NODE_STYLE colors/icons; reverse edges for backward.
+  - Deadlock fixed: overlays (shop pause mid-move!) handled in update() BEFORE
+    the state switch — never gate overlay decisions on a specific state.
+- VERIFIED: full 20-turn all-bot game w/ exact economy math + real minigame
+  round-trip (intro included). Gauntlet code still present but unreachable.
+- NEXT: real playtest; cosmetics → character visuals; owner-only mode lock.
+
 ## Session 2026-08-22 (round 10) — asymmetric Ghost Grabbers + HR flight v2
 - ghost.js has TWO modes: `asym` (online, ≥2 humans): seeded hunter pick
   (sorted ids, seed % n), everyone else ghosts in ONE shared house; fills to 3
