@@ -22,6 +22,20 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-22 (round 10) — asymmetric Ghost Grabbers + HR flight v2
+- ghost.js has TWO modes: `asym` (online, ≥2 humans): seeded hunter pick
+  (sorted ids, seed % n), everyone else ghosts in ONE shared house; fills to 3
+  ghosts w/ host-simulated bots. Roles switch live on capture (ghost→hunter).
+  Capture 2.5s (was 5). Placements: hunter-win = hunter 1st + reverse capture
+  order; ghost-win = ghosts by distance roamed (survivors first), hunter last.
+  Net msgs: st(10Hz pos/room/beam/dist), bot, lit(8Hz), cap, end. Each hunter
+  client = authority for own beam. Classic scored mode kept for local/solo.
+  ⚠ untested with real multi-device peers — Sam should 3-player test.
+- Home Run flight = horizontal side-chase (stadium slides away left, ocean
+  surface + boat, clouds/birds band, diagonal climb to starfield + aliens for
+  moonshots, splash ending for sub-space hits).
+- imports ?v=10. Deployed.
+
 ## Session 2026-08-22 (round 9) — multiplayer joining FIXED
 - Sam's 3-player real-world test failed: all players alone in same-code rooms.
   Cause: Trystero 'torrent' strategy → public WebTorrent trackers often dead →
