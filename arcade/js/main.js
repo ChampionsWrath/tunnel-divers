@@ -1,22 +1,22 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=14';
-import * as audio from './audio.js?v=14';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=14';
-import { Net, makeRoomCode } from './net.js?v=14';
-import tunnel from './games/tunnel.js?v=14';
-import stack from './games/stack.js?v=14';
-import crown from './games/crown.js?v=14';
-import brain from './games/brain.js?v=14';
-import blast from './games/blast.js?v=14';
-import food from './games/food.js?v=14';
-import homerun from './games/homerun.js?v=14';
-import trivia from './games/trivia.js?v=14';
-import ghost from './games/ghost.js?v=14';
-import greed from './games/greed.js?v=14';
-import lava from './games/lava.js?v=14';
-import { createBoard } from './board.js?v=14';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=15';
+import * as audio from './audio.js?v=15';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=15';
+import { Net, makeRoomCode } from './net.js?v=15';
+import tunnel from './games/tunnel.js?v=15';
+import stack from './games/stack.js?v=15';
+import crown from './games/crown.js?v=15';
+import brain from './games/brain.js?v=15';
+import blast from './games/blast.js?v=15';
+import food from './games/food.js?v=15';
+import homerun from './games/homerun.js?v=15';
+import trivia from './games/trivia.js?v=15';
+import ghost from './games/ghost.js?v=15';
+import greed from './games/greed.js?v=15';
+import lava from './games/lava.js?v=15';
+import { createBoard } from './board.js?v=15';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -152,7 +152,11 @@ function renderLobby() {
       const c = document.createElement('button');
       c.className = 'cchip' + ((S.boardTurns || 20) === t ? ' sel' : '');
       c.textContent = t + ' turns';
-      c.addEventListener('click', () => { S.boardTurns = t; audio.sfx.ui(); renderLobby(); });
+      c.addEventListener('click', () => {
+        S.boardTurns = t; audio.sfx.ui();
+        if (S.net) S.net.send('turns', { t });   // board length must match on every client
+        renderLobby();
+      });
       chips.appendChild(c);
     }
     row.appendChild(chips); grid.appendChild(row);
@@ -203,7 +207,8 @@ async function goOnline(asHost) {
   S.net.onPeers = () => { if (S.screen === 'lobby') renderLobby(); };
   S.net.onMsg = (t, p, from) => {
     if (t === 'mode') { S.mode = p.mode; if (S.screen === 'lobby') renderLobby(); }
-    else if (t === 'start') launch(p.mode, p.seed, true);
+    else if (t === 'turns') { S.boardTurns = p.t; if (S.screen === 'lobby') renderLobby(); }
+    else if (t === 'start') { if (p.turns) S.boardTurns = p.turns; launch(p.mode, p.seed, true); }
     else if (t === 'next' && S.gauntlet) nextRound(true);
     else if (t === 'ready') { S.readySet[p.id] = true; updateIntroUI(); checkAllReady(); }
     else if (t === 'bd' && S.boardObj) S.boardObj.applyAct(p, true);   // board events survive minigames
@@ -240,7 +245,7 @@ $('volMusic').addEventListener('input', () => { audio.setMusVol($('volMusic').va
 $('btnStart').addEventListener('click', () => {
   audio.sfx.ui();
   const seed = (Math.random() * 999999 | 0) + 1;
-  if (S.net) S.net.send('start', { mode: S.mode, seed });
+  if (S.net) S.net.send('start', { mode: S.mode, seed, turns: S.boardTurns || 20 });
   launch(S.mode, seed, false);
 });
 function launch(mode, seed, fromNet) {

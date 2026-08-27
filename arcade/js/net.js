@@ -12,22 +12,25 @@ const RELAYS = [
   'wss://nostr.mom',
   'wss://relay.snort.social',
 ];
+// NOTE: the old openrelay.metered.ca TURN entries are gone — that free service is
+// dead (0 relay candidates), and dead TURN just slows ICE. STUN-only covers most
+// home-wifi peers; carrier-grade NAT (both phones on LTE) still needs a real TURN
+// account (metered.ca free tier / Cloudflare) wired in here when we get creds.
 const RTC = {
   iceServers: [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
   ],
 };
 
-let joinRoom = null, getRelaySockets = null, loadErr = null;
+let joinRoom = null, getRelaySockets = null, libSelfId = null, loadErr = null;
 
 async function ensureLib() {
   if (joinRoom || loadErr) return;
   try {
     const m = await import('https://esm.sh/trystero@0.20.0/nostr');
     joinRoom = m.joinRoom;
+    libSelfId = m.selfId || null;
     getRelaySockets = m.getRelaySockets || null;
   } catch (e) { loadErr = e; }
 }
@@ -50,6 +53,10 @@ export class Net {
   async join(code, profile, asHost) {
     await ensureLib();
     if (!joinRoom) throw new Error('P2P unavailable (network blocked)');
+    // CRITICAL: selfId must be trystero's id — the one peers key us by. A homemade
+    // uid gives every client a different view of the player list (each sees itself
+    // under an id nobody else has → seats scramble, turns deadlock, ready-ups hang).
+    if (libSelfId) this.selfId = libSelfId;
     this.code = code; this.isHost = !!asHost; this.profile = profile;
     this.joinedAt = Date.now();
     this.room = joinRoom(
