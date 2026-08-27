@@ -3,7 +3,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=15';
+import { drawDiverTop, drawDiverStand } from './character.js?v=16';
 
 function shadeCol(hex, f) {
   try {
@@ -90,8 +90,9 @@ class Board {
     this.clicks = [];
     this._pd = e => { this.clicks.push([e.clientX, e.clientY]); };
     ctx.cv.addEventListener('pointerdown', this._pd);
-    if (ctx.onNet) ctx.onNet((t, p) => { if (t === 'bd') this.applyAct(p, true); });
+    if (ctx.onNet) ctx.onNet((t, p) => { if (t === 'bd') this.queueAct(p); });
     this.isNetHost = !ctx.net || ctx.net.isHost;
+    this.rq = [];   // remote acts wait here until the local state machine can accept them
     this.mapView = false;
     this.decor = this.buildDecor();
     this.showBanner('🎪 THE CHAOTIC BOARDWALK 🎪', '#ffd23f', 2.2);
@@ -126,9 +127,37 @@ class Board {
     this.applyAct({ a, d }, false);
     if (this.ctx.net) this.ctx.net.send('bd', { a, d });
   }
+  /* Remote acts must NEVER be dropped — a lagging client (throttled rAF, backgrounded
+     phone, latency spike) receives the mover's acts "early", while its own state machine
+     is still animating the previous phase. Acts queue here and apply once the local
+     machine reaches the state each act belongs to; a lost act = permanent desync. */
+  queueAct(msg) {
+    if (msg.a === 'rw' || msg.a === 'sync') { this.applyAct(msg, true); return; }  // board may be stashed (mid-minigame) — update() isn't running
+    this.rq.push({ msg, t: 0 });
+  }
+  canApply(a) {
+    switch (a) {
+      case 'roll': case 'skipItem': case 'playItem': return this.state === 'menu';
+      case 'branch': return this.state === 'branch';
+      case 'buy': case 'shopDone': return !!this.overlay && this.overlay.kind === 'shop';
+      case 'mascot': return !!this.overlay && this.overlay.kind === 'mascot';
+      case 'pinata2': return !!this.overlay && this.overlay.kind === 'pinata';
+      case 'steal': return this.state === 'action';
+      case 'mg': return this.state === 'mgIntro';
+      default: return true;
+    }
+  }
+  drainQueue(rdt) {
+    while (this.rq.length) {
+      const q = this.rq[0]; q.t += rdt;
+      // failsafe: a gating bug must degrade to a glitch, not a permanent hang
+      if (!this.canApply(q.msg.a) && q.t < 6) break;
+      this.rq.shift();
+      this.applyAct(q.msg, true);
+    }
+  }
   applyAct(msg, remote) {
     const { a, d } = msg;
-    if (remote && this.authority() && a !== 'mg' && a !== 'rw' && a !== 'sync') return; // ignore echoes of my own authority
     switch (a) {
       case 'skipItem': this.enterRoll(); break;
       case 'playItem': this.doPlayItem(d.idx); break;
@@ -138,6 +167,7 @@ class Board {
       case 'shopDone': this.closeShop(); break;
       case 'mascot': this.doMascot(d.bet, d.win); break;
       case 'steal': this.doSteal(d.victim, d.ci); break;
+      case 'pinata2': this.applyPinata(d.c); break;
       case 'mg': if (remote) this.launchMg(d.gid, d.seed, true); break;
       case 'rw': if (remote) this.applyRewards(d.list, d.rows); break;
     }
@@ -182,7 +212,9 @@ class Board {
       this.state = 'branch'; this.stateT = 0; this.branchOpts = opts; this.botT = 1 + this.rng();
       return;
     }
-    const nxt = opts.length ? opts[Math.floor(this.rng() * opts.length)] : p.node;
+    // deterministic pick: rng streams diverge across clients (authority-only draws),
+    // so any path choice every client computes independently must not consult rng
+    const nxt = opts.length ? opts[0] : p.node;
     this.stepTo(nxt);
   }
   stepTo(nid) {
@@ -238,7 +270,7 @@ class Board {
   forceBack(p, n) {
     for (let i = 0; i < n; i++) {
       const prev = this.map[p.node].prev;
-      if (prev.length) p.node = prev[Math.floor(this.rng() * prev.length)];
+      if (prev.length) p.node = prev[0];   // deterministic: runs on every client, rng streams differ
     }
     p.ax = this.map[p.node].x; p.ay = this.map[p.node].y;
   }
@@ -373,6 +405,7 @@ class Board {
   /* ---------------- update ---------------- */
   update(rdt) {
     this.tt += rdt; this.stateT += rdt; this.bannerT -= rdt;
+    this.drainQueue(rdt);
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
     const { W, H } = this.ctx.dim;
     const Zfit = Math.min(W / 118, (H * 0.68) / 74), Zgame = Math.min(W, H) / 34;
@@ -1001,9 +1034,3 @@ class Board {
   dispose() { this.ctx.cv.removeEventListener('pointerdown', this._pd); }
 }
 
-/* route the late-added acts */
-const _apply = Board.prototype.applyAct;
-Board.prototype.applyAct = function (msg, remote) {
-  if (msg.a === 'pinata2') { this.applyPinata(msg.d.c); return; }
-  _apply.call(this, msg, remote);
-};

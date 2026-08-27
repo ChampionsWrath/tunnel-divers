@@ -1,22 +1,22 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=15';
-import * as audio from './audio.js?v=15';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=15';
-import { Net, makeRoomCode } from './net.js?v=15';
-import tunnel from './games/tunnel.js?v=15';
-import stack from './games/stack.js?v=15';
-import crown from './games/crown.js?v=15';
-import brain from './games/brain.js?v=15';
-import blast from './games/blast.js?v=15';
-import food from './games/food.js?v=15';
-import homerun from './games/homerun.js?v=15';
-import trivia from './games/trivia.js?v=15';
-import ghost from './games/ghost.js?v=15';
-import greed from './games/greed.js?v=15';
-import lava from './games/lava.js?v=15';
-import { createBoard } from './board.js?v=15';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=16';
+import * as audio from './audio.js?v=16';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=16';
+import { Net, makeRoomCode } from './net.js?v=16';
+import tunnel from './games/tunnel.js?v=16';
+import stack from './games/stack.js?v=16';
+import crown from './games/crown.js?v=16';
+import brain from './games/brain.js?v=16';
+import blast from './games/blast.js?v=16';
+import food from './games/food.js?v=16';
+import homerun from './games/homerun.js?v=16';
+import trivia from './games/trivia.js?v=16';
+import ghost from './games/ghost.js?v=16';
+import greed from './games/greed.js?v=16';
+import lava from './games/lava.js?v=16';
+import { createBoard } from './board.js?v=16';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -211,7 +211,7 @@ async function goOnline(asHost) {
     else if (t === 'start') { if (p.turns) S.boardTurns = p.turns; launch(p.mode, p.seed, true); }
     else if (t === 'next' && S.gauntlet) nextRound(true);
     else if (t === 'ready') { S.readySet[p.id] = true; updateIntroUI(); checkAllReady(); }
-    else if (t === 'bd' && S.boardObj) S.boardObj.applyAct(p, true);   // board events survive minigames
+    else if (t === 'bd' && S.boardObj) S.boardObj.queueAct(p);   // board events survive minigames; queued until the state machine is ready
     else if (S.gameNet) S.gameNet(t, p, from);
   };
   show('lobby'); renderLobby();
