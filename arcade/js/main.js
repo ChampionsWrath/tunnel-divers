@@ -1,22 +1,22 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=16';
-import * as audio from './audio.js?v=16';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=16';
-import { Net, makeRoomCode } from './net.js?v=16';
-import tunnel from './games/tunnel.js?v=16';
-import stack from './games/stack.js?v=16';
-import crown from './games/crown.js?v=16';
-import brain from './games/brain.js?v=16';
-import blast from './games/blast.js?v=16';
-import food from './games/food.js?v=16';
-import homerun from './games/homerun.js?v=16';
-import trivia from './games/trivia.js?v=16';
-import ghost from './games/ghost.js?v=16';
-import greed from './games/greed.js?v=16';
-import lava from './games/lava.js?v=16';
-import { createBoard } from './board.js?v=16';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=17';
+import * as audio from './audio.js?v=17';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=17';
+import { Net, makeRoomCode } from './net.js?v=17';
+import tunnel from './games/tunnel.js?v=17';
+import stack from './games/stack.js?v=17';
+import crown from './games/crown.js?v=17';
+import brain from './games/brain.js?v=17';
+import blast from './games/blast.js?v=17';
+import food from './games/food.js?v=17';
+import homerun from './games/homerun.js?v=17';
+import trivia from './games/trivia.js?v=17';
+import ghost from './games/ghost.js?v=17';
+import greed from './games/greed.js?v=17';
+import lava from './games/lava.js?v=17';
+import { createBoard } from './board.js?v=17';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -210,7 +210,11 @@ async function goOnline(asHost) {
     else if (t === 'turns') { S.boardTurns = p.t; if (S.screen === 'lobby') renderLobby(); }
     else if (t === 'start') { if (p.turns) S.boardTurns = p.turns; launch(p.mode, p.seed, true); }
     else if (t === 'next' && S.gauntlet) nextRound(true);
-    else if (t === 'ready') { S.readySet[p.id] = true; updateIntroUI(); checkAllReady(); }
+    else if (t === 'ready') {
+      S.readySet[p.id] = true;
+      (S.readyAt = S.readyAt || {})[p.id] = Date.now();   // survives the startGame reset race
+      updateIntroUI(); checkAllReady();
+    }
     else if (t === 'bd' && S.boardObj) S.boardObj.queueAct(p);   // board events survive minigames; queued until the state machine is ready
     else if (S.gameNet) S.gameNet(t, p, from);
   };
@@ -290,7 +294,18 @@ function startGame(gameId, seed, players) {
   calibrateTilt(); clearTouch();
   show('game');
   S.pending = { gameId, seed: seed >>> 0, players };
-  S.readySet = {}; S.countdown = 0; S.gameNet = null;
+  // a faster peer's 'ready' can land BEFORE this reset runs — merge recent early
+  // arrivals back in, or the receiver waits forever for a ready it already got
+  S.readySet = {};
+  for (const id in (S.readyAt || {})) if (Date.now() - S.readyAt[id] < 8000) S.readySet[id] = true;
+  S.countdown = 0; S.gameNet = null;
+  if (S.net) {   // and re-send our own ready every 1s until everyone's in (heals lost/early messages)
+    clearInterval(S._readyResend);
+    S._readyResend = setInterval(() => {
+      if (!S.pending) { clearInterval(S._readyResend); return; }
+      humanPlayers().filter(p => p.local && S.readySet[p.id]).forEach(p => S.net.send('ready', { id: p.id }));
+    }, 1000);
+  }
   S.inst = game.create({
     cv, g, dim, players, seed: (seed ^ 0x5EED) >>> 0,
     net: null, onNet: null, practice: true, input: getInput,
