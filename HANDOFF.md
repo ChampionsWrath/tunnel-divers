@@ -22,6 +22,47 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 14) — ⭐ ONLINE MULTIPLAYER ACTUALLY WORKS NOW ⭐
+Sam: "multiplayer still isn't working." It never worked past the lobby. Four
+root causes found by driving two live-site tabs through a REAL online board
+game (host at ~1x sim speed, guest at 12x — a deliberate worst-case lag test):
+1. **Seat scramble (the killer)**: net.js selfId was a homemade uid() while
+   peers key each other by trystero peer ids → every client saw ITSELF under
+   an id nobody else had, its short uid sorted first, so each client took
+   seat 0. Acts landed on the wrong player, turn 2 deadlocked, ready-ups
+   could never complete. Fix: selfId = trystero's module selfId (v15).
+2. **Dropped remote acts**: applyAct's "ignore echoes of my own authority"
+   guard silently ate any act arriving while the receiver still thought it
+   was its own turn (constant on phones: throttled rAF, backgrounding,
+   latency). One eaten 'roll' = opponent frozen forever. Fix: remote acts go
+   through queueAct→rq, drain in update() only when the local state machine
+   reaches the state each act belongs to (roll→menu, branch→branch,
+   buy/shopDone→shop overlay, pinata2→pinata overlay, steal→action,
+   mg→mgIntro; rw/sync immediate since the board may be stashed behind a
+   minigame). 6s sim-time failsafe; queue ages in sim time so a backgrounded
+   phone resumes cleanly. Also folded the pinata2 bottom-of-file monkey-patch
+   into the switch, and made multi-edge path picks (advanceStep backward,
+   forceBack) deterministic — rng streams differ per client (v16).
+3. **Ready-up race**: a faster peer's 'ready' can arrive BEFORE the
+   receiver's startGame() wipes readySet → receiver hangs at the intro
+   (observed live). Fix: 'ready' arrivals timestamped in S.readyAt and
+   recent (<8s) ones merged back after the reset, plus each ready client
+   re-sends its ready every 1s until the round starts (v17).
+4. **Board length desync**: S.boardTurns was local-only. Now chip clicks
+   broadcast 'turns' and 'start' carries it (v15).
+Also: openrelay.metered.ca TURN is DEAD (verified 0 relay candidates) —
+removed; cloudflare STUN added. **Remaining gap: no TURN server** = two
+phones both on carrier-grade NAT (LTE↔LTE) may still fail to connect;
+same-wifi and most home-network pairs are fine on STUN. Free options need an
+account: metered.ca free tier or Cloudflare TURN — ask Sam.
+**Verified live on the deployed site**: full 8-turn 2-player online board
+game, all 8 minigame round-trips (ready-up → play → rewards), shop pauses,
+squash, branch picks — both clients logged IDENTICAL nodes/coins at every
+checkpoint and identical final scores (146/101) despite the 12x speed skew.
+GH Pages caching note: index.html/main.js are unversioned (max-age 600) —
+after a deploy, phones may run the old build for up to ~10 min; the lobby
+warning line already tells friends to refresh.
+
 ## Session 2026-08-22 (round 13) — board UX + ground/decor (Sam's 5 fixes)
 - Sam's feedback: chips under iPhone status bar; forks unselectable; only ROLL
   offered; board felt like floating spaces; wanted carnival decor along routes.
