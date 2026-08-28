@@ -22,6 +22,29 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 22) — bodies, t-shirt+jeans, sticky preview, tutorial
+- ward gains {body:'m'|'f', shirtCol}. Female: tapered/flared tee silhouette
+  (path replaces roundRect torso) + lashes on lenses front AND top view.
+- Clothes philosophy per Sam: earned board cosmetics are the flash; base
+  wear = T-SHIRT COLOR only (HSL picker dot, shirtCol, falls back to seat
+  color when null) + blue jeans always. Shirt colors standing torso +
+  sleeves + batter (via ward passed to drawBatter); ARENA TOP VIEW KEEPS
+  SEAT COLOR for identity. migrateWard maps old preset c.shirt→shirtCol.
+  Solo game: window.__shirtCol override in shirtCol(), cos.pants forced
+  'blue'. Preset shirt/pants rows REMOVED from the customize screen (trail
+  row stays). anyToRgb/shadeShirt/lightShirt in character.js accept hsl().
+- CHARACTER preview pinned: sticky wrapper div (top:-18px vs panel padding,
+  bg #101624, z-index 5) — options scroll under it. Canvas now 220x180.
+- **Board tutorial** (board.js): this.tut=0 at creation; 4 cards (objective
+  / turn / minigames / squash+items) drawn as drawTutorial overlay, NEXT
+  (tutN) / SKIP (tutS) buttons, progress dots. Handling sits in update()
+  right after clicks capture: swallows ALL taps while open; state machine +
+  remote act mirroring run underneath — zero sync impact. Every game shows
+  it; skippable in one tap.
+- Verified: rows BODY/HAIR/HATS/FACIAL/T-SHIRT/TRAIL, sticky computed
+  style, shirt hsl persisted, 5-diver body lineup, tutorial next/skip +
+  roll-after-dismiss + full bot game clean. Build 25, deployed 5d53fe0.
+
 ## Session 2026-08-26 (round 21) — wardrobe expansion + color pickers
 - ward is now {hair, hat, face, hairCol, faceCol}. HAIR is its own category
   drawn on the FRONT of the head (drawHairFront/drawHairTop — Sam's spikes
