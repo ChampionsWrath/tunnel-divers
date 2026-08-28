@@ -1,9 +1,10 @@
 // THE CHAOTIC BOARDWALK — the master board-game wrapper for the minigame roster.
-// Node-graph map (35 nodes, loop + 2 forks), dice movement, coins/items/cosmetics,
+// Node-graph NETWORK (37 nodes: promenade + 2 midways + shore shortcut + pier cut,
+// 4 forks, 2 warp-cannon pairs), dice movement, coins/items/cosmetics,
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=25';
+import { drawDiverTop, drawDiverStand } from './character.js?v=26';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -40,30 +41,71 @@ const cosmetic = id => COSMETICS.find(c => c.id === id);
 const REWARDS = [15, 10, 6, 3, 1];
 const DYNAMIC = { tunnel: s => clamp(Math.round(2 + s / 400), 2, 18), food: s => clamp(Math.round(2 + s * 0.6), 2, 18) };
 
-/* ---------------- the 35-node boardwalk blueprint ---------------- */
+/* ---------------- the boardwalk blueprint: a NETWORK, not a circle ----------------
+   Outer promenade + two midway paths cutting through the park + a shore shortcut +
+   a pier cut — FOUR forks, and two pairs of WARP CANNONS (🌀) that blast you to the
+   matching cannon across the park. Nodes sit ≥10 world units apart (tiles span ~6.6
+   x 6.2 units on screen) so spaces never overlap. Virtual space ~108 x 72. */
 function buildMap() {
-  const nodes = [];
-  const add = (id, type, x, y, next) => nodes[id] = { id, type, x, y, next };
-  // main loop: 28 nodes on a rounded circuit (virtual space 100 x 62)
-  const CX = 50, CY = 33, RX = 42, RY = 24;
-  const mainType = i => ({
-    0: 'start', 3: 'pinata', 5: 'fork', 8: 'shop', 12: 'mascot', 14: 'pinata', 17: 'fork', 21: 'shop', 25: 'red',
-  })[i] || (i % 3 === 2 ? 'red' : 'blue');
-  for (let i = 0; i < 28; i++) {
-    const a = -HP + (i / 28) * TAU;
-    add(i, mainType(i), CX + Math.cos(a) * RX, CY + Math.sin(a) * RY * 1.04, [(i + 1) % 28]);
-  }
-  // branch A: shortcut off node 5, rejoins at 10 (3 nodes, spicy)
-  nodes[5].next = [6, 28];
-  add(28, 'red', lerp(nodes[5].x, nodes[10].x, 0.3) - 6, lerp(nodes[5].y, nodes[10].y, 0.3) - 7, [29]);
-  add(29, 'mascot', lerp(nodes[5].x, nodes[10].x, 0.55) - 7, lerp(nodes[5].y, nodes[10].y, 0.55) - 8, [30]);
-  add(30, 'blue', lerp(nodes[5].x, nodes[10].x, 0.8) - 5, lerp(nodes[5].y, nodes[10].y, 0.8) - 6, [10]);
-  // branch B: scenic detour off node 17, rejoins at 23 (4 nodes, piñata bait)
-  nodes[17].next = [18, 31];
-  add(31, 'blue', lerp(nodes[17].x, nodes[23].x, 0.22) + 7, lerp(nodes[17].y, nodes[23].y, 0.22) + 8, [32]);
-  add(32, 'pinata', lerp(nodes[17].x, nodes[23].x, 0.45) + 9, lerp(nodes[17].y, nodes[23].y, 0.45) + 9, [33]);
-  add(33, 'red', lerp(nodes[17].x, nodes[23].x, 0.68) + 8, lerp(nodes[17].y, nodes[23].y, 0.68) + 8, [34]);
-  add(34, 'blue', lerp(nodes[17].x, nodes[23].x, 0.88) + 5, lerp(nodes[17].y, nodes[23].y, 0.88) + 6, [23]);
+  //            [type,      x,   y ]
+  const SPEC = [
+    ['start', 8, 64],    // 0  bottom-left — GO
+    ['blue', 18, 66],    // 1
+    ['warpA', 28, 64],   // 2  🌀 cannon ↔ 16
+    ['fork', 38, 67],    // 3  ⑂ bottom fork: promenade on, or up the midway
+    ['blue', 48, 64],    // 4
+    ['red', 58, 67],     // 5
+    ['pinata', 68, 64],  // 6
+    ['blue', 78, 66],    // 7  (merge: pier cut lands here)
+    ['red', 88, 63],     // 8
+    ['blue', 97, 56],    // 9
+    ['fork', 101, 46],   // 10 ⑂ pier fork: up the coast, or cut inland
+    ['red', 98, 36],     // 11
+    ['warpB', 102, 26],  // 12 🌀 cannon ↔ 24
+    ['pinata', 96, 16],  // 13
+    ['blue', 86, 10],    // 14
+    ['fork', 76, 13],    // 15 ⑂ top fork: promenade on, or down the midway
+    ['warpA', 66, 9],    // 16 🌀 cannon ↔ 2
+    ['mascot', 56, 12],  // 17
+    ['blue', 46, 9],     // 18
+    ['red', 36, 12],     // 19 (merge: left midway tops out here)
+    ['blue', 26, 9],     // 20
+    ['shop', 16, 13],    // 21
+    ['blue', 7, 22],     // 22
+    ['fork', 4, 32],     // 23 ⑂ shore fork: down the coast, or the shore shortcut
+    ['warpB', 8, 42],    // 24 🌀 cannon ↔ 12
+    ['blue', 5, 52],     // 25 → back to GO
+    // left midway (up through the park):  3 → 26..29 → 19
+    ['mascot', 36, 56],  // 26
+    ['pinata', 40, 46],  // 27
+    ['blue', 35, 36],    // 28 (merge: shore shortcut lands here)
+    ['red', 39, 26],     // 29
+    // right midway (down through the park):  15 → 30..33 → 7
+    ['blue', 78, 24],    // 30
+    ['shop', 74, 34],    // 31
+    ['red', 79, 44],     // 32
+    ['blue', 75, 54],    // 33 (merge: pier cut lands here)
+    // shore shortcut:  23 → 34..35 → 28
+    ['pinata', 14, 34],  // 34
+    ['blue', 24, 32],    // 35
+    // pier cut:  10 → 36 → 33
+    ['red', 90, 50],     // 36
+  ];
+  const EDGES = [
+    [0, 1], [1, 2], [2, 3], [3, 4], [3, 26], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9],
+    [9, 10], [10, 11], [10, 36], [11, 12], [12, 13], [13, 14], [14, 15], [15, 16], [15, 30],
+    [16, 17], [17, 18], [18, 19], [19, 20], [20, 21], [21, 22], [22, 23], [23, 24], [23, 34],
+    [24, 25], [25, 0],
+    [26, 27], [27, 28], [28, 29], [29, 19],
+    [30, 31], [31, 32], [32, 33], [33, 7],
+    [34, 35], [35, 28],
+    [36, 33],
+  ];
+  const nodes = SPEC.map(([type, x, y], id) => ({ id, type, x, y, next: [] }));
+  for (const [a, b] of EDGES) nodes[a].next.push(b);
+  // warp cannon pairing: land on one, get BLASTED to its twin
+  const WARPS = { 2: 16, 16: 2, 12: 24, 24: 12 };
+  for (const id in WARPS) { nodes[id].type = nodes[id].type.slice(0, 4) === 'warp' ? 'warp' : nodes[id].type; nodes[id].warpTo = WARPS[id]; }
   // reverse edges for backward movement
   for (const n of nodes) n.prev = [];
   for (const n of nodes) for (const nx of n.next) nodes[nx].prev.push(n.id);
@@ -74,6 +116,7 @@ const frac = v => { const s = Math.sin(v) * 43758.5453; return s - Math.floor(s)
 const NODE_STYLE = {
   start: ['#ffd23f', '🏁'], blue: ['#4d9de0', '+3'], red: ['#e04040', '-3'], fork: ['#93a0bd', '⑂'],
   shop: ['#a1e887', '🛒'], pinata: ['#e08bd0', '🪅'], mascot: ['#ffb84d', '🎭'],
+  warp: ['#59d9ff', '🌀'],
 };
 
 /* ================================================================ */
@@ -111,14 +154,18 @@ class Board {
   buildDecor() {
     const d = [];
     const put = (kind, x, y, s) => d.push({ kind, x, y, s: s || 1 });
-    // inside the loop: the fairground
-    put('tent', 38, 30, 1.3); put('tent', 60, 26, 1); put('carousel', 50, 40, 1.1);
-    put('balloons', 44, 22, 1); put('popcorn', 58, 38, 1); put('cotton', 41, 44, 1);
+    // in the POCKETS between paths (the map is a network now — no big open middle)
+    put('tent', 20, 50, 1.2);      // between shore, shortcut and bottom row
+    put('tent', 56, 24, 1);        // upper-middle pocket
+    put('carousel', 56, 48, 1.1);  // big central-lower pocket
+    put('balloons', 24, 20, 0.9);  // upper-left pocket
+    put('popcorn', 88, 32, 0.95);  // between right midway and the pier
+    put('cotton', 50, 37, 0.9);    // mid-park nook
+    put('balloons', 60, 58, 0.9);
     // around the outside
-    put('tent', 12, 12, 0.9); put('balloons', 88, 10, 1); put('popcorn', 95, 40, 0.9);
-    put('cotton', 6, 44, 0.9); put('balloons', 20, 58, 0.9); put('tent', 82, 56, 0.95);
-    put('lamp', 28, 6, 1); put('lamp', 72, 6, 1); put('lamp', 4, 30, 1); put('lamp', 96, 26, 1);
-    put('lamp', 30, 60, 1); put('lamp', 70, 61, 1);
+    put('tent', 110, 44, 0.9); put('balloons', -3, 26, 0.9); put('cotton', 108, 58, 0.9);
+    put('lamp', 22, 4, 1); put('lamp', 66, 3, 1); put('lamp', -2, 12, 1); put('lamp', 108, 10, 1);
+    put('lamp', -2, 60, 1); put('lamp', 46, 72, 1); put('lamp', 94, 70, 1);
     return d;
   }
   cur() { return this.players[this.playerIdx]; }
@@ -310,6 +357,16 @@ class Board {
         if (p.coins < 5) { this.pop('🎭 The mascot wants 5 🪙 you don\'t have…', '#93a0bd'); this.endPlayerTurn(1); }
         else { this.overlay = { kind: 'mascot', t: 0 }; this.botT = 1.2 + this.rng(); }
         break;
+      case 'warp': {
+        // human cannonball! blast off to the twin cannon across the park.
+        // fully deterministic (fixed pairs) — every client animates the same.
+        this.warpFrom = { x: p.ax, y: p.ay };
+        this.warpTarget = node.warpTo;
+        this.state = 'warping'; this.stateT = 0;
+        this.pop('🌀 CANNON TIME!', '#59d9ff', 26);
+        this.ctx.audio.sfx.boom(); this.ctx.audio.sfx.whoosh();
+        break;
+      }
       default: this.endPlayerTurn(0.8);
     }
   }
@@ -419,12 +476,12 @@ class Board {
     this.drainQueue(rdt);
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
     const { W, H } = this.ctx.dim;
-    const Zfit = Math.min(W / 118, (H * 0.68) / 74), Zgame = Math.min(W, H) / 34;
+    const Zfit = Math.min(W / 120, (H * 0.68) / 80), Zgame = Math.min(W, H) / 34;
     const wide = this.state === 'splash' || this.state === 'end' || this.mapView;
     const zoomT = wide ? Zfit : Zgame;
-    if (this.zoom === undefined) { this.zoom = Zfit; this.camX = 50; this.camY = 33; }
+    if (this.zoom === undefined) { this.zoom = Zfit; this.camX = 54; this.camY = 37; }
     this.zoom += (zoomT - this.zoom) * Math.min(1, rdt * 2.2);
-    const foc = wide ? { ax: 50, ay: 33 } : this.cur();
+    const foc = wide ? { ax: 54, ay: 37 } : this.cur();
     this.camX += (foc.ax - this.camX) * Math.min(1, rdt * 4);
     this.camY += (foc.ay - this.camY) * Math.min(1, rdt * 4);
     for (let i = this.pops.length; i--;) { this.pops[i].t += rdt; if (this.pops[i].t > this.pops[i].dur) this.pops.splice(i, 1); }
@@ -535,6 +592,23 @@ class Board {
           for (let k = 0; k < 5; k++)
             this.dust.push({ x: tn.x, y: tn.y, ox: (k / 4 - 0.5) * 2, t: 0, dur: 0.4 + frac(k * 3.7) * 0.2, s: 0.7 + frac(k * 9.1) * 0.6 });
           this.afterStep();
+        }
+        break;
+      }
+      case 'warping': {
+        // soaring arc between the paired cannons — big air, tiny dignity
+        const p2 = this.cur(), tn = this.map[this.warpTarget];
+        const f = Math.min(1, this.stateT / 1.1);
+        p2.ax = lerp(this.warpFrom.x, tn.x, f);
+        p2.ay = lerp(this.warpFrom.y, tn.y, f) - Math.sin(f * Math.PI) * 17;
+        if (f >= 1) {
+          p2.node = this.warpTarget; p2.ax = tn.x; p2.ay = tn.y;
+          this.squashT = 0.2;
+          for (let k = 0; k < 7; k++)
+            this.dust.push({ x: tn.x, y: tn.y, ox: (k / 6 - 0.5) * 2.4, t: 0, dur: 0.45 + frac(k * 3.7) * 0.2, s: 0.8 + frac(k * 9.1) * 0.7 });
+          this.pop('🌀 WARPED!', '#59d9ff');
+          this.ctx.audio.sfx.thud(1);
+          this.endPlayerTurn(0.8);
         }
         break;
       }
@@ -909,10 +983,10 @@ class Board {
         'Score = coins 🪙 + cosmetics ⭐',
       ]],
       ['🎲 ON YOUR TURN', [
-        'ROLL and walk the boardwalk.',
-        '🔵 +3 coins · 🔴 −3 coins',
-        '🛒 shop: buy item cards',
-        '🪅 piñata: win cosmetics · 🎭 gamble',
+        'ROLL and walk the boardwalk —',
+        'pick your path at every ⑂ fork!',
+        '🔵 +3 · 🔴 −3 · 🛒 shop · 🪅 cosmetics',
+        '🌀 cannons BLAST you across the park',
       ]],
       ['🕹️ MINIGAME EVERY ROUND', [
         'After everyone moves, a minigame!',
