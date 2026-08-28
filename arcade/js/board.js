@@ -3,7 +3,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=22';
+import { drawDiverTop, drawDiverStand } from './character.js?v=23';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -87,7 +87,7 @@ class Board {
     this.maxTurns = ctx.maxTurns || 20;
     this.turn = 1; this.playerIdx = 0;
     this.players = ctx.players.map((p, i) => ({
-      id: p.id, name: p.name, color: p.color, skin: p.skin, local: p.local, slot: p.slot, bot: !!p.bot,
+      id: p.id, name: p.name, color: p.color, skin: p.skin, ward: p.ward, local: p.local, slot: p.slot, bot: !!p.bot,
       node: 0, coins: 15, items: [], cosmetics: [], shield: false, pending: null,
       ax: this.map[0].x, ay: this.map[0].y,   // animated position
     }));
@@ -413,6 +413,7 @@ class Board {
 
   /* ---------------- update ---------------- */
   update(rdt) {
+    if (!this.players.length) return;   // pathological empty board — never crashloop
     this.tt += rdt; this.stateT += rdt; this.bannerT -= rdt;
     this.drainQueue(rdt);
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
@@ -1035,7 +1036,7 @@ class Board {
       g.translate(-(px + ox2), -(py + Z * 0.5));
     }
     drawDiverStand(g, {
-      x: px + ox2, y: py - 28 * sc + Z * 0.2, scale: sc, color: p.color, skin: p.skin,
+      x: px + ox2, y: py - 28 * sc + Z * 0.2, scale: sc, color: p.color, skin: p.skin, ward: p.ward,
       t: this.tt + i * 1.7, cos: p.cosmetics,
       mood: this.state === 'reward' ? 'cheer' : 'idle',
     });
@@ -1088,7 +1089,7 @@ class Board {
       g.lineWidth = active ? 2.5 + Math.sin(this.tt * 5) * 0.7 : 2.5;
       chipPath(); g.fill(); g.stroke();
       // mini avatar with their cosmetics
-      drawDiverTop(g, { x: x + 15, y: y + ch / 2, r: 10, color: p.color, t: this.tt + i, speedNorm: 0, cos: p.cosmetics });
+      drawDiverTop(g, { x: x + 15, y: y + ch / 2, r: 10, color: p.color, t: this.tt + i, speedNorm: 0, cos: p.cosmetics, ward: p.ward, skin: p.skin });
       g.textAlign = 'left'; g.font = '800 11px system-ui';
       g.fillStyle = '#ffd23f'; g.fillText('🪙' + p.coins, x + 29, y + 18);
       const cosVal = p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0);

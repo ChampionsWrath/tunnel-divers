@@ -1,23 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=22';
-import * as audio from './audio.js?v=22';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=22';
-import { Net, makeRoomCode } from './net.js?v=22';
-import tunnel from './games/tunnel.js?v=22';
-import stack from './games/stack.js?v=22';
-import crown from './games/crown.js?v=22';
-import brain from './games/brain.js?v=22';
-import blast from './games/blast.js?v=22';
-import food from './games/food.js?v=22';
-import homerun from './games/homerun.js?v=22';
-import trivia from './games/trivia.js?v=22';
-import ghost from './games/ghost.js?v=22';
-import greed from './games/greed.js?v=22';
-import lava from './games/lava.js?v=22';
-import rush from './games/rush.js?v=22';
-import { createBoard } from './board.js?v=22';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=23';
+import * as audio from './audio.js?v=23';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=23';
+import { Net, makeRoomCode } from './net.js?v=23';
+import tunnel from './games/tunnel.js?v=23';
+import stack from './games/stack.js?v=23';
+import crown from './games/crown.js?v=23';
+import brain from './games/brain.js?v=23';
+import blast from './games/blast.js?v=23';
+import food from './games/food.js?v=23';
+import homerun from './games/homerun.js?v=23';
+import trivia from './games/trivia.js?v=23';
+import ghost from './games/ghost.js?v=23';
+import greed from './games/greed.js?v=23';
+import lava from './games/lava.js?v=23';
+import rush from './games/rush.js?v=23';
+import { createBoard } from './board.js?v=23';
+import { drawDiverStand, WARDROBE } from './character.js?v=23';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -36,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 22;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 23;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -62,6 +63,13 @@ const S = {
   profile: {
     name: lsGet('td_name') || 'DIVER', color: PLAYER_COLORS[0],
     skin: (v => isNaN(v) ? 35 : clamp(v, 0, 100))(parseInt(lsGet('td_skin'), 10)),
+    // wardrobe shares td_cos1 with the solo game (hat/face render on THE DIVER)
+    ward: (() => {
+      try {
+        const c = JSON.parse(lsGet('td_cos1')) || {};
+        return { hat: c.hat || 'none', face: c.face || 'none' };
+      } catch (e) { return { hat: 'none', face: 'none' }; }
+    })(),
   },
   mode: 'party',
   locals: [],          // [{id,name,color,local:true,slot,bot}]
@@ -80,36 +88,95 @@ $('nameIn').addEventListener('change', () => {
   lsSet('td_name', S.profile.name);
 });
 if ($('buildTag')) $('buildTag').textContent = 'build ' + BUILD + ' — everyone in a room must match';
+/* ---------------- CHARACTER screen: skin + wardrobe, live preview ---------------- */
 $('skinIn').value = S.profile.skin;
 $('skinIn').addEventListener('input', () => {
   S.profile.skin = clamp(+$('skinIn').value, 0, 100);
   lsSet('td_skin', '' + S.profile.skin);
 });
+function saveWard() {
+  let c = {};
+  try { c = JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { }
+  c.hat = S.profile.ward.hat; c.face = S.profile.ward.face;
+  lsSet('td_cos1', JSON.stringify(c));   // solo game reads the same store
+}
+const WARD_LBL = { hat: 'HATS & HAIR', face: 'FACIAL HAIR' };
+// solo-game-only wardrobe (shirt/pants/trail render in Tunnel Divers itself) —
+// edited here too since this screen replaced the solo game's cosmetics panel
+const SOLO_WARD = {
+  shirt: [['orange', 'Orange'], ['blue', 'Blue'], ['red', 'Red'], ['green', 'Green'],
+  ['purple', 'Purple'], ['black', 'Black'], ['rainbow', 'Rainbow']],
+  pants: [['blue', 'Blue'], ['black', 'Black'], ['red', 'Red'], ['green', 'Green'],
+  ['shorts', 'Shorts'], ['rainbow', 'Rainbow']],
+  trail: [['red', 'Red Scarf'], ['blue', 'Blue Scarf'], ['gold', 'Gold Scarf'], ['rainbow', 'Rainbow'],
+  ['fire', 'Fire'], ['bubbles', 'Bubbles'], ['sparkle', 'Sparkle']],
+};
+const SOLO_LBL = { shirt: 'SHIRT (solo game)', pants: 'PANTS (solo game)', trail: 'TRAIL (solo game)' };
+function soloCos() {
+  try { return JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { return {}; }
+}
+function buildWardUI() {
+  const el = $('wardRows'); el.innerHTML = '';
+  const mkRow = (label, opts, getSel, onPick) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'secLbl'; lbl.textContent = label;
+    el.appendChild(lbl);
+    const chips = document.createElement('div'); chips.className = 'chips';
+    for (const [id, nm] of opts) {
+      const b = document.createElement('button');
+      b.className = 'cchip' + (getSel() === id ? ' sel' : '');
+      b.textContent = nm;
+      b.addEventListener('click', () => { onPick(id); audio.sfx.ui(); buildWardUI(); });
+      chips.appendChild(b);
+    }
+    el.appendChild(chips);
+  };
+  for (const cat in WARDROBE)
+    mkRow(WARD_LBL[cat], WARDROBE[cat],
+      () => S.profile.ward[cat],
+      id => { S.profile.ward[cat] = id; saveWard(); });
+  for (const cat in SOLO_WARD)
+    mkRow(SOLO_LBL[cat], SOLO_WARD[cat],
+      () => soloCos()[cat] || SOLO_WARD[cat][0][0],
+      id => { const c = soloCos(); c[cat] = id; lsSet('td_cos1', JSON.stringify(c)); });
+}
+$('btnCustom').addEventListener('click', () => { audio.sfx.ui(); buildWardUI(); show('custom'); });
+$('btnCustomClose').addEventListener('click', () => { audio.sfx.ui(); show('home'); });
+function drawCharPreview(ts) {
+  const pcv = $('charPrev'); if (!pcv) return;
+  const pg = pcv.getContext('2d');
+  pg.clearRect(0, 0, 220, 220);
+  drawDiverStand(pg, {
+    x: 110, y: 96, scale: 3.1, color: S.profile.color,
+    t: ts / 1000, skin: S.profile.skin, ward: S.profile.ward,
+    mood: Math.floor(ts / 2600) % 3 === 0 ? 'cheer' : 'idle',
+  });
+}
 
 function show(scr) {
   S.screen = scr;
   document.querySelectorAll('.screen').forEach(el => el.classList.remove('show'));
-  const map = { home: 'scrHome', set: 'scrSet', lobby: 'scrLobby', results: 'scrResults' };
+  const map = { home: 'scrHome', set: 'scrSet', lobby: 'scrLobby', results: 'scrResults', custom: 'scrCustom' };
   if (map[scr]) $(map[scr]).classList.add('show');
   $('btnQuit').style.display = scr === 'game' ? 'block' : 'none';
 }
 
 /* ---------------- lobby ---------------- */
 function resetLocals() {
-  S.locals = [{ id: 'L0', name: S.profile.name, color: S.profile.color, skin: S.profile.skin, local: true, slot: 0, bot: false }];
+  S.locals = [{ id: 'L0', name: S.profile.name, color: S.profile.color, skin: S.profile.skin, ward: S.profile.ward, local: true, slot: 0, bot: false }];
 }
 function lobbyPlayers() {
   if (!S.net) return S.locals;
   // deterministic shared ordering: self + peers, sorted by net id
-  const rows = [{ nid: S.net.selfId, name: S.profile.name, skin: S.profile.skin }];
+  const rows = [{ nid: S.net.selfId, name: S.profile.name, skin: S.profile.skin, ward: S.profile.ward }];
   for (const pid in S.net.peers) {
     const pr = S.net.peers[pid] || {};
-    rows.push({ nid: pid, name: pr.name || 'DIVER', skin: pr.skin });
+    rows.push({ nid: pid, name: pr.name || 'DIVER', skin: pr.skin, ward: pr.ward });
   }
   rows.sort((a, b) => a.nid < b.nid ? -1 : 1);
   return rows.map((r, i) => ({
     id: r.nid, name: r.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-    skin: r.skin == null ? 35 : r.skin,
+    skin: r.skin == null ? 35 : r.skin, ward: r.ward || { hat: 'none', face: 'none' },
     local: r.nid === S.net.selfId, slot: 0, bot: false,
   }));
 }
@@ -183,13 +250,19 @@ function renderLobby() {
 }
 $('btnAddLocal').addEventListener('click', () => {
   audio.sfx.ui();
-  S.locals.push({ id: 'L' + S.locals.length + uid(), name: 'PLAYER ' + (S.locals.filter(p => !p.bot).length + 1), color: PLAYER_COLORS[S.locals.length], skin: 35, local: true, slot: 1, bot: false });
+  S.locals.push({ id: 'L' + S.locals.length + uid(), name: 'PLAYER ' + (S.locals.filter(p => !p.bot).length + 1), color: PLAYER_COLORS[S.locals.length], skin: 35, ward: { hat: 'none', face: 'none' }, local: true, slot: 1, bot: false });
   renderLobby();
 });
 $('btnAddBot').addEventListener('click', () => {
   audio.sfx.ui();
   const names = ['CHAD', 'BLINKY', 'MOOSE', 'GARY'];
-  S.locals.push({ id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4], color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0, local: true, slot: -1, bot: true });
+  const hats = WARDROBE.hat, faces = WARDROBE.face;
+  S.locals.push({
+    id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4],
+    color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0,
+    ward: { hat: hats[(Math.random() * hats.length) | 0][0], face: faces[(Math.random() * faces.length) | 0][0] },
+    local: true, slot: -1, bot: true,
+  });
   renderLobby();
 });
 $('btnLeave').addEventListener('click', () => {
@@ -212,7 +285,7 @@ async function goOnline(asHost) {
   $('netStatus').textContent = 'connecting…';
   S.net = new Net();
   try {
-    await S.net.join(code, { name: S.profile.name, skin: S.profile.skin }, asHost);
+    await S.net.join(code, { name: S.profile.name, skin: S.profile.skin, ward: S.profile.ward }, asHost);
   } catch (e) { $('netStatus').textContent = '⚠ ' + e.message; S.net = null; return; }
   S.code = code; $('netStatus').textContent = '';
   // keep the status line honest while waiting (relay health, hints)
@@ -513,6 +586,7 @@ function frame(ts) {
   if (!last) last = ts;
   let dt = (ts - last) / 1000; last = ts;
   if (dt > 0.05) dt = 0.05; if (dt < 0) dt = 0;
+  if (S.screen === 'custom') drawCharPreview(ts);
   if (S.inst && S.screen === 'game') {
     if (S.countdown > 0) {
       const prev = Math.ceil(S.countdown);
@@ -544,4 +618,4 @@ function frame(ts) {
 requestAnimationFrame(frame);
 
 // debug hooks for automated testing
-window.ARC = { S, launch, startGame, lobbyPlayers, show, GAMES, dim, setTiltOrient, getInput };
+window.ARC = { S, launch, startGame, lobbyPlayers, show, GAMES, dim, setTiltOrient, getInput, drawCharPreview };

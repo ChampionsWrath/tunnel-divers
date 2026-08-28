@@ -2,7 +2,7 @@
 // "GET TO GREEN!" — scramble (and shove) onto the safe color before everything
 // else sinks. Safe tiles get scarcer every round. Last diver standing wins.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=22';
+import { drawDiverTop } from '../character.js?v=23';
 
 const COLS = 5, ROWS = 4, MAX_ROUNDS = 14;
 const ACC = 2300, DRAG = 3.0, VMAX = 620, DASH_CD = 1.2, PR = 20;
@@ -49,7 +49,7 @@ class LavaGame {
         name: base ? base.name : ['CHAD', 'BLINKY', 'MOOSE', 'GARY'][i % 4],
         color: base ? base.color : ['#ffb84d', '#66e0c9', '#d5b3ff', '#ff8a5c'][i % 4],
         local: base ? base.local : false, slot: base ? base.slot : -1,
-        bot: base ? !!base.bot : true, isFill: !base, cos: base && base.cosmetics,
+        bot: base ? !!base.bot : true, isFill: !base, cos: base && base.cosmetics, ward: base && base.ward, skin: base && base.skin,
         x: 0.2 + (i % 2) * 0.6, y: 0.3 + Math.floor(i / 2) * 0.4,   // grid-space 0..1
         vx: 0, vy: 0, alive: true, dashCd: 0, dashT: 0, fx: 1, fy: 0,
         wob: this.rng() * TAU, skill: 0.4 + (bh % 100) / 200, react: 0, target: null,
@@ -300,7 +300,7 @@ class LavaGame {
       g.fillStyle = 'rgba(0,0,0,0.35)';
       g.beginPath(); g.ellipse(sx, sy + PR * 0.7, PR * 0.85, PR * 0.35, 0, 0, TAU); g.fill();
       drawDiverTop(g, {
-        x: sx, y: sy, r: PR, color: p.color, t: this.tt + p.wob, cos: p.cos,
+        x: sx, y: sy, r: PR, color: p.color, t: this.tt + p.wob, cos: p.cos, ward: p.ward, skin: p.skin,
         vx: p.vx, vy: p.vy, speedNorm: sp,
       });
       g.font = '800 12px system-ui'; g.textAlign = 'center';

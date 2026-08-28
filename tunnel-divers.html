@@ -106,7 +106,6 @@
   <button class="btn" id="btnDive">DIVE ▼</button>
   <div class="row">
     <button class="btn tiny ghostBtn" id="btnDaily">📅 DAILY DIVE</button>
-    <button class="btn tiny ghostBtn" id="btnCos">🎨 COSMETICS</button>
     <button class="btn tiny ghostBtn" id="btnRiv">👥 RIVALS</button>
     <button class="btn tiny ghostBtn" id="btnSet">⚙️ SETTINGS</button>
   </div>
@@ -981,7 +980,9 @@ function buildCos(){
       lsSet('td_cos1',JSON.stringify(cos));
       sfxUi(); buildCos();});});
 }
-$('btnCos').addEventListener('click',()=>{initAudio();sfxUi();buildCos();
+/* character customization moved to the Divers Arcade home menu — same shared
+   td_skin/td_cos1 store, so choices made there apply here too */
+if($('btnCos'))$('btnCos').addEventListener('click',()=>{initAudio();sfxUi();buildCos();
   $('ovTitle').classList.remove('show'); $('ovCos').classList.add('show');});
 $('btnCosClose').addEventListener('click',()=>{sfxUi();
   $('ovCos').classList.remove('show'); $('ovTitle').classList.add('show');});

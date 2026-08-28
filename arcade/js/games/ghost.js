@@ -6,7 +6,7 @@
 //   Ghosts survive    → most-traveled ghost 1st … hunter LAST.
 // Local/solo: scored hunter runs vs bot ghosts (same house, same rules).
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=22';
+import { drawDiverTop } from '../character.js?v=23';
 
 const RW = 100, RH = 66;
 const T_LIMIT = 90, CAPTURE_T = 2.5, NGHOSTS = 3;
@@ -493,7 +493,7 @@ class GhostGame {
     // hunters in this room: always drawn (everyone can see hunters)
     for (const h of this.hunters) {
       if (h.rm[0] !== rx || h.rm[1] !== ry) continue;
-      drawDiverTop(g, { x: mx(h.x), y: my(h.y), r: S * PRr, color: h.color, t: this.tt, vx: h.vx || 0, vy: h.vy || 0, cos: h.cos });
+      drawDiverTop(g, { x: mx(h.x), y: my(h.y), r: S * PRr, color: h.color, t: this.tt, vx: h.vx || 0, vy: h.vy || 0, cos: h.cos, ward: h.ward, skin: h.skin });
       if (!h.me) {   // their beam, visible to ghosts (and other hunters)
         const ba = Math.atan2(h.fy, h.fx);
         g.globalAlpha = 0.12; g.fillStyle = '#7dff6a';
@@ -532,7 +532,7 @@ class GhostGame {
       }
     }
     drawDiverTop(g, {
-      x: mx(this.px), y: my(this.py), r: S * PRr, color: this.runner.color, cos: this.runner.cosmetics,
+      x: mx(this.px), y: my(this.py), r: S * PRr, color: this.runner.color, cos: this.runner.cosmetics, ward: this.runner.ward, skin: this.runner.skin,
       t: this.tt, vx: this.vx, vy: this.vy, speedNorm: Math.hypot(this.vx, this.vy) / VMAX,
     });
   }
