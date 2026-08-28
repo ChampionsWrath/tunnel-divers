@@ -22,6 +22,33 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 19) — board art pass (Mario Party quality)
+- Full visual overhaul of board.js render():
+  - Sky: 4-stop dusk gradient, twinkling stars, layered sun glow, parallax
+    clouds, ROTATING ferris-wheel silhouette w/ colored gondolas (horizon,
+    parallax 0.15), animated seagulls.
+  - Ocean: swell lines (sin-wobbled), sun glitter path, foam shoreline.
+  - Deck: alternating plank tone bands, staggered joints + nail heads.
+  - Walkway: 4-pass ribbon w/ dark outer trim + guide DOTS between spaces.
+  - String lights: twinkle + glow halos + white speculars.
+  - Tiles (drawTile): AO ground shadow, gradient extrusion, sunset-lit
+    gradient top, WHITE ICON PLATE (blue +3 / red -3 text), gloss sweep,
+    pulsing halo on the active player's tile. Helper lightCol() added.
+  - Goofy physics: landing squash (this.squashT, 0.2s, applied around feet
+    in drawStanding), dust poofs (this.dust, spawned on step completion in
+    the stepping case), airborne shadow shrink during hops.
+  - Dice: pseudo-3D cube (top/right faces), classic PIPS, pop-in scale on
+    settle, glowing ? pre-roll.
+  - Reward: 70-piece confetti rain (this.confetti, keyed per reward phase).
+  - Chips: drop shadow, gradient panels, pulsing active border.
+  - Decor: grounding shadows under all props.
+- **Test infra**: scratchpad/shotrecv.py — tiny CORS POST receiver on
+  :8138; page fetch()es canvas dataURLs to it → screenshots land on disk
+  for Read. (Manual base64 copying corrupts — always use this.)
+- frac() helper added (deterministic hash-noise). Verified: full 8-turn bot
+  game rendering every state, 0 errors; screenshot reviewed. Build 22,
+  deployed 6350210.
+
 ## Session 2026-08-26 (round 18) — RELAY FALLBACK: multiplayer works on any network
 - Sam + wife: both in room, "no players found". Cause class: nostr discovery
   works but the WebRTC connection can't form (CGNAT / AP isolation), no free
