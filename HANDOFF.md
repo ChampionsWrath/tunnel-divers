@@ -22,6 +22,31 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 17) — NEW MINIGAME: Rush Hour 🚗
+- games/rush.js — first-person 3-lane traffic dodger, survive-the-longest.
+  Sunset FPV: sky gradient + sun + city silhouette, perspective road
+  (halfW/yAt use pow(z,0.62)), animated dashed dividers, obstacles {lane,
+  span, z, kind car/cone/truck} rushing camera-ward; trucks span 2 lanes
+  (from ~12s, p ramps to 0.4). Crash when an obstacle crosses z≈0.06 in
+  your lane; near-miss whoosh + white flash otherwise.
+- **Fairness invariant**: every spawn wave picks its open lane by ±1 random
+  walk from the previous gap — the path through is ALWAYS reachable.
+  Verified: 0 frames with all 3 lanes blocked in a 44.7s autopilot run.
+- Input: flick hysteresis on inp.x (>0.45 shifts a lane, must return <0.22
+  to re-arm) — works for swipe, tilt, and keys. Wheel: camL glide velocity
+  → wheel angle (eases at 10/s, clamp ±1.15rad); HANDS on the wheel use
+  skinTone(runner.skin), forearms + sleeve cuffs in runner.color (per the
+  skin/model rule).
+- Format: sequential-runner like food/homerun (ready→run→crash 1.4s beat→
+  next runner→wait), bots = seeded survival times (14+skill*38+rng*26,
+  capped 120s = MAX_T hard cap), online 'g'/{k:'sc'} progress + done.
+  Practice: endless, crash respawns. Difficulty: wave gap 1.55s→0.5s,
+  speed 0.55→1.3 z/s.
+- Registered in main.js GAMES + MODES (board picks it up via gameIds).
+  Verified headlessly at v20: full run (autopilot 44.7s, 20 lane changes,
+  wheel to 0.74rad), crash→results with bot times, practice 16 crash-
+  respawns over 30s, pixel probes confirm scene layout. Deployed 908e548.
+
 ## Session 2026-08-26 (round 16) — lava ladder + Diner Dash + trash fix
 - **Floor is Lava difficulty ladder** (Sam's spec): tiles now carry
   {col, shape (●▲■, from r6), num (1-3, from r10)}; the call escalates one
