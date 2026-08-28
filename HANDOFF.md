@@ -22,6 +22,32 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 18) — RELAY FALLBACK: multiplayer works on any network
+- Sam + wife: both in room, "no players found". Cause class: nostr discovery
+  works but the WebRTC connection can't form (CGNAT / AP isolation), no free
+  TURN exists, trystero's onPeerJoin never fires → lobby shows nothing.
+- **net.js now has a full relay fallback**: own ephemeral nostr events
+  (kind 20176, nostr-tools@2.7.2/pure for signing, esm.sh) on the same
+  RELAYS. Presence beat every 2.5s (t:'p'); game messages (t:'m', optional
+  to:) for any peer without a direct link. hello/hi handshake runs over it
+  transparently. Direct P2P preferred per-peer (this.rtc map); relay copies
+  from rtc peers dropped; silent relay peers pruned after 15s; sockets
+  auto-reopen after 8s. Lobby shows "⚡ relay mode" when active. Out-of-order
+  relay delivery absorbed by the board act queue (round 14 work).
+- **trystero 0.20 IGNORES rtcConfig** (verified: constructor interception
+  shows its own google+twilio STUN always) — our ICE tweaks never applied.
+  `?rtcoff=1` cripples RTC at the RTCPeerConnection constructor: THE way to
+  test relay mode with two local tabs.
+- Home screen shows "build 21 — everyone in a room must match" (#buildTag,
+  BUILD const in main.js — bump with ?v=); lonely-lobby hint references it.
+- Verified: two ?rtcoff=1 tabs (0 RTC connections) discovered each other in
+  ~5s and played a synced board game (turn 1 → minigame ready/rewards →
+  turn 2) entirely over public relays, identical state logs. Deployed
+  296039f. Sam + wife should BOTH refresh (build 21 on home) and retry.
+- Note: minigame remote-score updates over relay are ~100-500ms laggy —
+  fine for the board, acceptable for score ticks; revisit if a future game
+  needs tight realtime remote state.
+
 ## Session 2026-08-26 (round 17) — NEW MINIGAME: Rush Hour 🚗
 - games/rush.js — first-person 3-lane traffic dodger, survive-the-longest.
   Sunset FPV: sky gradient + sun + city silhouette, perspective road
