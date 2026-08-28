@@ -6,7 +6,7 @@
 //   Ghosts survive    → most-traveled ghost 1st … hunter LAST.
 // Local/solo: scored hunter runs vs bot ghosts (same house, same rules).
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=18';
+import { drawDiverTop } from '../character.js?v=19';
 
 const RW = 100, RH = 66;
 const T_LIMIT = 90, CAPTURE_T = 2.5, NGHOSTS = 3;

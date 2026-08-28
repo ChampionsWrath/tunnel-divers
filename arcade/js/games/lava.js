@@ -2,20 +2,32 @@
 // "GET TO GREEN!" — scramble (and shove) onto the safe color before everything
 // else sinks. Safe tiles get scarcer every round. Last diver standing wins.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=18';
+import { drawDiverTop } from '../character.js?v=19';
 
-const COLS = 5, ROWS = 4, MAX_ROUNDS = 12;
+const COLS = 5, ROWS = 4, MAX_ROUNDS = 14;
 const ACC = 2300, DRAG = 3.0, VMAX = 620, DASH_CD = 1.2, PR = 20;
 const TCOLS = [['#e04040', 'RED'], ['#4d9de0', 'BLUE'], ['#3a9d5c', 'GREEN'], ['#ffd23f', 'YELLOW']];
+const SHAPE_GLYPH = ['●', '▲', '■'], SHAPE_NAME = ['CIRCLE', 'TRIANGLE', 'SQUARE'];
+/* difficulty ladder — each phase teaches one thing before the next lands:
+   r1-5 color only · r6-7 shape only (shapes appear on tiles) · r8-9 color+shape
+   r10 number only (numbers appear) · r11 color+number · r12+ color+shape+number */
+function specFor(r) {
+  if (r <= 5) return ['col'];
+  if (r <= 7) return ['shape'];
+  if (r <= 9) return ['col', 'shape'];
+  if (r === 10) return ['num'];
+  if (r === 11) return ['col', 'num'];
+  return ['col', 'shape', 'num'];
+}
 
 export default {
   id: 'lava', name: 'Floor is Lava', icon: '🌋',
   desc: 'Scramble to the safe color before the floor sinks.',
   howto: {
-    goal: 'The floor calls a SAFE COLOR — get both feet on it before the rest sinks into lava! Safe tiles get rarer every round, so expect shoving. Last diver standing wins.',
+    goal: 'The floor calls a SAFE target — get both feet on a matching tile before the rest sinks into lava! Early rounds call a COLOR… then SHAPES appear (round 6), then NUMBERS (round 10), and late rounds call combos like "GREEN ▲ 3". Safe tiles get rarer every round. Last diver standing wins.',
     touch: 'Tilt / drag to run · TAP = DASH (shove!)',
     keys: 'P1: WASD + SPACE dash · P2: arrows + ENTER',
-    tip: 'A well-timed DASH knocks someone off the safe tile at the buzzer. This is legal and encouraged.',
+    tip: 'Read the WHOLE call — late rounds need the right color AND shape AND number. A well-timed DASH off the buzzer is legal and encouraged.',
   },
   create(ctx) { return new LavaGame(ctx); }
 };
@@ -48,28 +60,65 @@ class LavaGame {
     this.phase = 'show'; this.phaseT = 0;
     this.newRound();
   }
+  matches(t) {
+    const s = this.spec;
+    if (s.keys.includes('col') && t.col !== s.col) return false;
+    if (s.keys.includes('shape') && t.shape !== s.shape) return false;
+    if (s.keys.includes('num') && t.num !== s.num) return false;
+    return true;
+  }
+  targetLabel() {
+    const s = this.spec, parts = [];
+    if (s.keys.includes('col')) parts.push(TCOLS[s.col][1]);
+    if (s.keys.includes('shape')) parts.push(SHAPE_GLYPH[s.shape] + (s.keys.length === 1 ? ' ' + SHAPE_NAME[s.shape] : ''));
+    if (s.keys.includes('num')) parts.push((s.keys.length === 1 ? 'NUMBER ' : '') + (s.num + 1));
+    return parts.join(' ');
+  }
   newRound() {
     this.round++;
-    // assign colors; safe color gets scarcer as rounds go on
-    const safeIdx = Math.floor(this.rng() * 4);
-    this.safe = safeIdx;
+    const r = this.round;
+    this.showShapes = r >= 6; this.showNums = r >= 10;
+    const keys = specFor(r);
+    this.spec = {
+      keys,
+      col: Math.floor(this.rng() * 4),
+      shape: Math.floor(this.rng() * 3),
+      num: Math.floor(this.rng() * 3),
+    };
     const total = COLS * ROWS;
-    const safeCount = this.practice ? 6 : Math.max(1, 6 - Math.floor(this.round / 2));
+    const safeCount = this.practice ? 6 : Math.max(1, 6 - Math.floor(r / 2));
     const idx = Array.from({ length: total }, (_, i) => i);
     for (let i = total - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
     this.tiles = new Array(total);
     idx.forEach((ti, k) => {
-      this.tiles[ti] = { col: k < safeCount ? safeIdx : Math.floor(this.rng() * 4), sink: 0 };
-      if (k >= safeCount && this.tiles[ti].col === safeIdx) this.tiles[ti].col = (safeIdx + 1 + Math.floor(this.rng() * 3)) % 4;
+      const t = {
+        col: Math.floor(this.rng() * 4),
+        shape: this.showShapes ? Math.floor(this.rng() * 3) : null,
+        num: this.showNums ? Math.floor(this.rng() * 3) : null,
+        sink: 0,
+      };
+      if (k < safeCount) {          // force a full match on the safe tiles
+        for (const key of keys) t[key] = this.spec[key];
+      } else if (this.matches(t)) { // everything else must fail on at least one target attr
+        const key = keys[Math.floor(this.rng() * keys.length)];
+        const mod = key === 'col' ? 4 : 3;
+        t[key] = (t[key] + 1 + Math.floor(this.rng() * (mod - 1))) % mod;
+      }
+      this.tiles[ti] = t;
     });
-    this.showT = Math.max(1.5, 3.4 - this.round * 0.18);
+    // fair timing: more attributes to scan = more time; extra grace the first
+    // round each new mechanic appears; still tightens a little every round
+    const base = [0, 3.4, 4.3, 5.2][keys.length];
+    this.showT = Math.max(1.8, base - r * 0.12 + ([6, 8, 10, 11, 12].includes(r) ? 0.7 : 0));
     this.phase = 'show'; this.phaseT = 0;
     this.ctx.audio.sfx.zone();
-    this.pops.push({ txt: 'GET TO ' + TCOLS[safeIdx][1] + '!', col: TCOLS[safeIdx][0], t: 0, dur: 1.4, big: true });
-    // bots pick a target safe tile (with reaction lag + occasional blunder)
+    const popCol = keys.includes('col') ? TCOLS[this.spec.col][0] : '#ffeccf';
+    this.pops.push({ txt: 'GET TO ' + this.targetLabel() + '!', col: popCol, t: 0, dur: 1.4, big: true });
+    // bots pick a target safe tile (with reaction lag + occasional blunder);
+    // multi-attribute rounds slow everyone's reaction — bots included, to stay fair
     for (const p of this.ps) if (p.bot && p.alive) {
-      p.react = 0.3 + (1 - p.skill) * 0.9 + this.rng() * 0.4;
-      const safes = this.tiles.map((t, i) => t.col === safeIdx ? i : -1).filter(i => i >= 0);
+      p.react = 0.3 + (1 - p.skill) * 0.9 + this.rng() * 0.4 + (keys.length - 1) * 0.45;
+      const safes = this.tiles.map((t, i) => this.matches(t) ? i : -1).filter(i => i >= 0);
       const blunder = this.rng() > 0.82 + p.skill * 0.15;
       const pool = blunder ? this.tiles.map((_, i) => i) : safes;
       p.target = pool[Math.floor(this.rng() * pool.length)];
@@ -135,13 +184,13 @@ class LavaGame {
       if (this.phaseT >= this.showT) { this.phase = 'sink'; this.phaseT = 0; this.ctx.audio.sfx.boom(); this.shake = 8; }
     } else if (this.phase === 'sink') {
       const f = Math.min(1, this.phaseT / 0.8);
-      for (const t of this.tiles) if (t.col !== this.safe) t.sink = f;
+      for (const t of this.tiles) if (!this.matches(t)) t.sink = f;
       if (this.phaseT > 0.55 && !this.judged) {
         this.judged = true;
         for (const p of this.ps) {
           if (!p.alive) continue;
           const ti = this.tileAt(p.x, p.y);
-          if (ti < 0 || this.tiles[ti].col !== this.safe) {
+          if (ti < 0 || !this.matches(this.tiles[ti])) {
             if (this.practice) { p.x = 0.5; p.y = 0.5; p.vx = p.vy = 0; this.pop('SPLASH! (practice — back you go)', '#ff8a5c'); }
             else {
               p.alive = false; this.elim.push(p);
@@ -212,8 +261,24 @@ class LavaGame {
       g.fillStyle = dark > 0 ? shadeHex(base, 1 - dark) : base;
       g.fillRect(ox2, oy2, ww, hh - 4);
       g.lineWidth = 3; g.strokeStyle = '#14100a'; g.strokeRect(ox2, oy2, ww, hh - 4);
+      // shape + number badges (the whole point after round 5)
+      if (t.shape != null) {
+        const scx = ox2 + ww / 2, scy = oy2 + (hh - 4) / 2, sr = Math.min(ww, hh) * 0.26;
+        g.fillStyle = 'rgba(255,255,255,0.92)'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+        g.beginPath();
+        if (t.shape === 0) g.arc(scx, scy, sr, 0, TAU);
+        else if (t.shape === 1) { g.moveTo(scx, scy - sr * 1.1); g.lineTo(scx + sr, scy + sr * 0.75); g.lineTo(scx - sr, scy + sr * 0.75); g.closePath(); }
+        else g.rect(scx - sr * 0.88, scy - sr * 0.88, sr * 1.76, sr * 1.76);
+        g.fill(); g.stroke();
+        if (t.num != null) {
+          g.fillStyle = '#14100a'; g.font = '900 ' + Math.round(sr * 1.15) + 'px system-ui';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.fillText('' + (t.num + 1), scx, scy + (t.shape === 1 ? sr * 0.22 : 0));
+          g.textBaseline = 'alphabetic';
+        }
+      }
       // cracks warn on doomed tiles as the timer runs out
-      if (urgent && t.col !== this.safe && Math.floor(this.tt * 6) % 2 === 0) {
+      if (urgent && !this.matches(t) && Math.floor(this.tt * 6) % 2 === 0) {
         g.strokeStyle = 'rgba(20,16,10,0.65)'; g.lineWidth = 2;
         g.beginPath(); g.moveTo(ox2 + ww * 0.25, oy2 + hh * 0.2);
         g.lineTo(ox2 + ww * 0.45, oy2 + hh * 0.5); g.lineTo(ox2 + ww * 0.3, oy2 + hh * 0.78); g.stroke();
@@ -252,9 +317,10 @@ class LavaGame {
       const tl = Math.max(0, this.showT - this.phaseT);
       g.font = '900 30px system-ui';
       g.lineWidth = 5; g.strokeStyle = 'rgba(10,8,4,0.9)';
-      const msg = TCOLS[this.safe][1] + ' · ' + tl.toFixed(1);
+      const msg = this.targetLabel() + ' · ' + tl.toFixed(1);
       g.strokeText(msg, W / 2, 42);
-      g.fillStyle = TCOLS[this.safe][0]; g.fillText(msg, W / 2, 42);
+      g.fillStyle = this.spec.keys.includes('col') ? TCOLS[this.spec.col][0] : '#ffeccf';
+      g.fillText(msg, W / 2, 42);
     }
     g.font = '800 14px system-ui'; g.fillStyle = '#ffeccf'; g.textAlign = 'left';
     g.fillText(this.practice ? 'PRACTICE' : 'ROUND ' + this.round, 12, 24);

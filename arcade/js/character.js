@@ -42,7 +42,7 @@ function drawPropAt(g, x, y, s, t) {
   g.restore();
 }
 
-/* top-down arena view (Crown Carriers, Food Flash…)
+/* top-down arena view (Crown Carriers, Diner Dash…)
    o: {x, y, r, color, t, vx?, vy?, speedNorm?, squash?, hat?: 'none'|'paper',
        mouth?: 0..1, cos?: string[] (cosmetic ids)} */
 export function drawDiverTop(g, o) {

@@ -1,8 +1,8 @@
-// FOOD FLASH — 50s diner rush. Grab food from the counter, deliver to tables.
+// DINER DASH — 50s diner rush. Grab food from the counter, deliver to tables.
 // Serve every item on a table's order to complete it. Most tables served in 75s wins.
 // Solo: the clock drains — every serve adds time, RUSH orders add a lot. Keep up!
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=18';
+import { drawDiverTop } from '../character.js?v=19';
 
 const T_LIMIT = 75, SOLO_START = 40;
 const ACC = 330, DRAG = 3.1, VMAX = 118, PRr = 4.4;   // virtual stage 100 x 100
@@ -14,13 +14,13 @@ const STATIONS = [[12, 14], [88, 14], [12, 90], [88, 90]];
 const TRASH = [8, 52];
 
 export default {
-  id: 'food', name: 'Food Flash', icon: '🍔',
+  id: 'food', name: 'Diner Dash', icon: '🍔',
   desc: '50s diner rush. Grab orders, serve tables, fast.',
   howto: {
     goal: 'Tables order food — walk to the counter to GRAB an item, walk to the table to SERVE it. Complete every item on an order to serve the table. Most tables served in 75s wins. Solo: the clock drains — each serve buys time, gold RUSH orders buy a lot!',
     touch: 'Tilt / drag to scoot around the diner',
     keys: 'P1: WASD · P2: arrow keys',
-    tip: 'You carry ONE item — touching a counter swaps it. Wrong item in hand? Dump it in the trash can.',
+    tip: 'You carry ONE item — touching a counter swaps it. Wrong item in hand? Dump it in the TRASH can on the left wall (the red-striped one).',
   },
   create(ctx) { return new FoodGame(ctx); }
 };
@@ -144,9 +144,12 @@ class FoodGame {
         }
       }
     }
-    // trash
-    if (this.carry !== null && Math.hypot(this.px - TRASH[0], this.py - TRASH[1]) < PRr + 6) {
-      this.carry = null; this.ctx.audio.sfx.wall();
+    // trash — tighter radius than before (accidental dumps felt random), loud feedback
+    this.trashFx = Math.max(0, (this.trashFx || 0) - rdt * 2);
+    if (this.carry !== null && Math.hypot(this.px - TRASH[0], this.py - TRASH[1]) < PRr + 2) {
+      this.pop('🗑️ TRASHED ' + MENU[this.carry][1] + '!', TRASH[0] + 14, TRASH[1] - 8, '#ff5f5f', 22);
+      this.carry = null; this.trashFx = 1;
+      this.ctx.audio.sfx.wall();
     }
     // deliver
     if (this.carry !== null) {
@@ -221,12 +224,29 @@ class FoodGame {
       g.fillText(MENU[si][1], mx(sx2), my(sy2) + 1);
       g.textBaseline = 'alphabetic';
     }
-    // trash
-    g.fillStyle = '#57534e'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
-    g.beginPath(); g.arc(mx(TRASH[0]), my(TRASH[1]), S * 5.5, 0, TAU); g.fill(); g.stroke();
-    g.font = Math.round(S * 6) + 'px serif'; g.textBaseline = 'middle';
-    g.fillText('🗑️', mx(TRASH[0]), my(TRASH[1]) + 1);
+    // trash — unmissable: red-striped can + TRASH label + pulsing danger ring while carrying
+    const tX = mx(TRASH[0]), tY = my(TRASH[1]);
+    if (this.carry !== null) {   // show the exact dump zone BEFORE you wander into it
+      const pulse = 0.5 + 0.5 * Math.sin(this.tt * 6);
+      g.strokeStyle = 'rgba(255,70,60,' + (0.4 + 0.4 * pulse).toFixed(2) + ')';
+      g.lineWidth = 2.5; g.setLineDash([S * 1.6, S * 1.3]);
+      g.beginPath(); g.arc(tX, tY, S * (PRr + 2), 0, TAU); g.stroke();
+      g.setLineDash([]);
+    }
+    const flash = this.trashFx || 0;
+    g.fillStyle = flash > 0 ? '#a33a30' : '#6e2f28'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
+    g.beginPath(); g.arc(tX, tY, S * 5.5 * (1 + flash * 0.15), 0, TAU); g.fill(); g.stroke();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = S * 0.9;   // hazard stripes
+    for (const a of [-0.6, 0.2, 1.0]) {
+      g.beginPath(); g.arc(tX, tY, S * 4.2, a, a + 0.55); g.stroke();
+    }
+    g.font = Math.round(S * 6) + 'px serif'; g.textBaseline = 'middle'; g.textAlign = 'center';
+    g.fillText('🗑️', tX, tY + 1);
     g.textBaseline = 'alphabetic';
+    g.font = '900 ' + Math.round(S * 3.4) + 'px system-ui';
+    g.lineWidth = 3; g.strokeStyle = 'rgba(10,8,4,0.9)';
+    g.strokeText('TRASH', tX, tY + S * 8.6);
+    g.fillStyle = '#ff5f5f'; g.fillText('TRASH', tX, tY + S * 8.6);
     // tables + orders
     for (let ti = 0; ti < TABLES.length; ti++) {
       const [tx, ty] = TABLES[ti];
