@@ -22,6 +22,35 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 20) — character overhaul + wardrobe + CHARACTER screen
+- character.js rewritten. Standing model: gradient torso + zipper, skin
+  HANDS on arm ends, head highlight/chin shade, ears, wrap-around goggle
+  strap, lens glints, blush. Top view: radial ball shading + hand dots.
+  Batter: gradient + gripping hands.
+- **Earned cosmetics refit** (all fitted to the model now): crown w/ jewels
+  on the skull; prop = fitted beanie + motion-blur blade; cape shoulder-
+  attached w/ animated wavy hem; duck ring TWO-PASS (back arc pre-torso,
+  front arc + head + tail post-torso — keep this ordering!); shoes get
+  squeaker dots + white soles; boots get buckles; burger mask is DRAWN
+  shapes (no emoji — platform fonts vary); nose glint.
+- **Wardrobe** (NEW on arcade model): ward {hat,face} — 7 hats + 4 facial
+  hair styles rendered front (drawWardHatFront — hair uses scalloped
+  hairline ABOVE the goggles, keep goggles visible!) and top-down
+  (drawWardHatTop). Priority: earned crown > earned prop > ward.hat.
+  WARDROBE export drives the UI.
+- **CHARACTER screen** (#scrCustom): 🎨 CHARACTER button on arcade home →
+  live animated preview canvas (drawCharPreview in frame()), skin slider
+  (MOVED off the home screen), hat/face chips, PLUS the solo game's
+  shirt/pants/trail rows. All stored in td_cos1/td_skin — the solo game
+  reads the same store; its own COSMETICS button is REMOVED (guarded).
+- ward rides profile → net hello → lobbyPlayers → board copy → crown/food/
+  lava/ghost drawDiverTop calls + board chips. Bots roll random ward.
+- Board.update guards empty player list (test-env crashloop protection).
+- Verified: custom screen (5 rows, picks persist to td_cos1, preview
+  renders), 6-player lineup screenshot (all cosmetics fitted), full 6-turn
+  dressed bot game 0 errors, solo page loads w/o btnCos. Build 23,
+  deployed 1e4670a.
+
 ## Session 2026-08-26 (round 19) — board art pass (Mario Party quality)
 - Full visual overhaul of board.js render():
   - Sky: 4-stop dusk gradient, twinkling stars, layered sun glow, parallax
