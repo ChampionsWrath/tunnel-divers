@@ -2,7 +2,7 @@
 // "GET TO GREEN!" — scramble (and shove) onto the safe color before everything
 // else sinks. Safe tiles get scarcer every round. Last diver standing wins.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=23';
+import { drawDiverTop } from '../character.js?v=24';
 
 const COLS = 5, ROWS = 4, MAX_ROUNDS = 14;
 const ACC = 2300, DRAG = 3.0, VMAX = 620, DASH_CD = 1.2, PR = 20;

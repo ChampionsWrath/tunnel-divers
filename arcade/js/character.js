@@ -25,12 +25,30 @@ function skinShade(v, f) {   // darker skin for shading
   return 'rgb(' + ch(16) + ',' + ch(8) + ',' + ch(0) + ')';
 }
 
-/* the free wardrobe (edited on the CHARACTER screen, stored in td_cos1/td_skin) */
+/* the free wardrobe (edited on the CHARACTER screen, stored in td_cos1/td_skin).
+   ward = {hair, hat, face, hairCol, faceCol} — hair renders under the hat;
+   hairCol/faceCol are any CSS color (the picker stores hsl(...) strings). */
 export const WARDROBE = {
-  hat: [['none', 'None'], ['hairb', 'Brown Hair'], ['hairy', 'Blond Spikes'], ['cap', 'Red Cap'],
-  ['beanie', 'Beanie'], ['tophat', 'Top Hat'], ['viking', 'Viking'], ['crown', 'Crown']],
-  face: [['none', 'None'], ['stache', 'Mustache'], ['goatee', 'Goatee'], ['beard', 'Beard'], ['bar', 'Handlebar']],
+  hair: [['none', 'None'], ['bowl', 'Bowl Cut'], ['spikes', 'Spikes'], ['curls', 'Curls'],
+  ['mohawk', 'Mohawk'], ['pony', 'Ponytail'], ['long', 'Long']],
+  hat: [['none', 'None'], ['cap', 'Cap'], ['beanie', 'Beanie'], ['tophat', 'Top Hat'],
+  ['viking', 'Viking'], ['crown', 'Crown'], ['cowboy', 'Cowboy'], ['party', 'Party Cone'],
+  ['phones', 'Headphones'], ['halo', 'Halo'], ['wizard', 'Wizard']],
+  face: [['none', 'None'], ['stache', 'Mustache'], ['goatee', 'Goatee'], ['beard', 'Beard'],
+  ['bar', 'Handlebar'], ['chops', 'Mutton Chops'], ['soul', 'Soul Patch']],
 };
+export const DEF_HAIR_COL = '#6b4423', DEF_FACE_COL = '#5a3a22';
+// old builds stored hair inside hat — migrate transparently
+export function migrateWard(w) {
+  w = w || {};
+  const out = {
+    hair: w.hair || 'none', hat: w.hat || 'none', face: w.face || 'none',
+    hairCol: w.hairCol || DEF_HAIR_COL, faceCol: w.faceCol || DEF_FACE_COL,
+  };
+  if (out.hat === 'hairb') { out.hat = 'none'; out.hair = 'bowl'; out.hairCol = '#6b4423'; }
+  if (out.hat === 'hairy') { out.hat = 'none'; out.hair = 'spikes'; out.hairCol = '#f0cd58'; }
+  return out;
+}
 
 function lightHex(hex, f) {
   try {
@@ -88,32 +106,89 @@ function drawPropAt(g, x, y, s, t) {
   g.fillStyle = OUTLINE; g.beginPath(); g.arc(0, 0, 1.3 * s, 0, TAU); g.fill();
   g.restore();
 }
+/* HAIR, front view — always drawn on the FRONT of the head (fringe/spikes rise
+   from the visible crown, never behind the silhouette), fitted to radius hr */
+function drawHairFront(g, style, col, x, y, hr, t) {
+  if (!style || style === 'none') return;
+  const s = hr / 10;
+  g.strokeStyle = OUTLINE; g.lineWidth = 1.6 * s; g.lineJoin = 'round';
+  g.fillStyle = col;
+  const skullCap = (scallops) => {   // hugging cap, fringe ends ABOVE the goggles
+    const hy2 = y - hr * 0.42, exr = hr * 0.94;
+    g.beginPath();
+    g.arc(x, y, hr * 1.06, Math.PI * 1.08, Math.PI * 1.92);
+    if (scallops) for (let k = 0; k < 4; k++) {
+      const x1 = x + exr - (k + 1) * (2 * exr / 4);
+      g.quadraticCurveTo(x + exr - (k + 0.5) * (2 * exr / 4), hy2 + hr * 0.2, x1, hy2);
+    } else { g.lineTo(x + exr, hy2); g.lineTo(x - exr, hy2); }
+    g.closePath(); g.fill(); g.stroke();
+  };
+  const sheen = () => {
+    g.fillStyle = 'rgba(255,255,255,0.18)';
+    g.beginPath(); g.ellipse(x - hr * 0.35, y - hr * 0.85, hr * 0.32, hr * 0.16, -0.5, 0, TAU); g.fill();
+    g.fillStyle = col;
+  };
+  if (style === 'bowl') { skullCap(true); sheen(); }
+  else if (style === 'spikes') {
+    skullCap(false);
+    // spikes rise from the FRONT of the crown, leaning slightly forward
+    for (const [a, sh, lean] of [[-0.72, 0.55, -0.25], [-0.36, 0.72, -0.12], [0, 0.8, 0], [0.36, 0.72, 0.12], [0.72, 0.55, 0.25]]) {
+      const bx = x + Math.sin(a) * hr * 0.92, by = y - Math.cos(a) * hr * 0.92;
+      const tx = bx + Math.sin(a + lean) * hr * sh, ty = by - Math.cos(a + lean) * hr * sh;
+      g.beginPath();
+      g.moveTo(bx - Math.cos(a) * hr * 0.2, by - Math.sin(a) * hr * 0.2);
+      g.lineTo(tx, ty);
+      g.lineTo(bx + Math.cos(a) * hr * 0.2, by + Math.sin(a) * hr * 0.2);
+      g.closePath(); g.fill(); g.stroke();
+    }
+    sheen();
+  } else if (style === 'curls') {
+    for (const [a, cr] of [[-1.15, 0.34], [-0.75, 0.38], [-0.38, 0.4], [0, 0.42], [0.38, 0.4], [0.75, 0.38], [1.15, 0.34]]) {
+      const cx2 = x + Math.sin(a) * hr * 0.88, cy2 = y - Math.cos(a) * hr * 0.88;
+      g.beginPath(); g.arc(cx2, cy2, hr * cr, 0, TAU); g.fill(); g.stroke();
+    }
+    sheen();
+  } else if (style === 'mohawk') {
+    skullCap(false);
+    g.beginPath();
+    g.moveTo(x - hr * 0.22, y - hr * 0.9);
+    for (let k = 0; k <= 4; k++) {           // jagged crest, tallest mid-front
+      const fx2 = x - hr * 0.55 + k * hr * 0.3;
+      g.lineTo(fx2, y - hr * (1.5 + Math.sin(k / 4 * Math.PI) * 0.65));
+      g.lineTo(fx2 + hr * 0.14, y - hr * 1.02);
+    }
+    g.lineTo(x + hr * 0.22, y - hr * 0.9);
+    g.closePath(); g.fill(); g.stroke();
+  } else if (style === 'pony') {
+    skullCap(true);
+    const sway = Math.sin((t || 0) * 2.4) * hr * 0.08;
+    g.beginPath();                            // tail swishing off the right side
+    g.moveTo(x + hr * 0.78, y - hr * 0.55);
+    g.quadraticCurveTo(x + hr * 1.55 + sway, y - hr * 0.2, x + hr * 1.28 + sway, y + hr * 0.75);
+    g.quadraticCurveTo(x + hr * 1.05 + sway * 0.5, y + hr * 0.35, x + hr * 0.92, y - hr * 0.28);
+    g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = '#e04040'; g.lineWidth = 2.2 * s;   // tie
+    g.beginPath(); g.moveTo(x + hr * 0.82, y - hr * 0.5); g.lineTo(x + hr * 1.0, y - hr * 0.32); g.stroke();
+    g.strokeStyle = OUTLINE; g.lineWidth = 1.6 * s;
+    sheen();
+  } else if (style === 'long') {
+    // side curtains falling past the ears first, then the cap over them
+    for (const sd of [-1, 1]) {
+      g.beginPath();
+      g.moveTo(x + sd * hr * 0.62, y - hr * 0.72);
+      g.quadraticCurveTo(x + sd * hr * 1.18, y - hr * 0.3, x + sd * hr * 1.05, y + hr * 1.15);
+      g.quadraticCurveTo(x + sd * hr * 0.85, y + hr * 1.3, x + sd * hr * 0.68, y + hr * 1.12);
+      g.quadraticCurveTo(x + sd * hr * 0.78, y + hr * 0.2, x + sd * hr * 0.45, y - hr * 0.55);
+      g.closePath(); g.fill(); g.stroke();
+    }
+    skullCap(true); sheen();
+  }
+}
 /* wardrobe hats, front view — fitted to a head of radius hr centered (x,y) */
 function drawWardHatFront(g, hat, x, y, hr, t) {
   const s = hr / 10;
   g.strokeStyle = OUTLINE; g.lineWidth = 2 * s;
-  if (hat === 'hairb' || hat === 'hairy') {
-    const hc = hat === 'hairb' ? '#8a6238' : '#f0cd58';
-    g.fillStyle = hc; g.lineWidth = 1.4 * s;
-    if (hat === 'hairy') {                 // spikes UNDER the cap so they merge cleanly
-      for (const [sx, sh] of [[-0.55, 0.5], [-0.18, 0.68], [0.2, 0.62], [0.55, 0.45]]) {
-        g.beginPath(); g.moveTo(x + sx * hr - 2.2 * s, y - hr * 0.8);
-        g.lineTo(x + sx * hr + 0.5 * s, y - hr * (0.8 + sh));
-        g.lineTo(x + sx * hr + 2.6 * s, y - hr * 0.75); g.closePath(); g.fill(); g.stroke();
-      }
-    }
-    // skull cap hugging the head, scalloped fringe ending ABOVE the goggles
-    const hy2 = y - hr * 0.42, exr = hr * 0.94;
-    g.beginPath();
-    g.arc(x, y, hr * 1.06, Math.PI * 1.08, Math.PI * 1.92);   // top arc, ear to ear
-    for (let k = 0; k < 4; k++) {          // scallops back right → left
-      const x1 = x + exr - (k + 1) * (2 * exr / 4);
-      g.quadraticCurveTo(x + exr - (k + 0.5) * (2 * exr / 4), hy2 + hr * 0.2, x1, hy2);
-    }
-    g.closePath(); g.fill(); g.stroke();
-    g.fillStyle = 'rgba(255,255,255,0.18)'; // sheen
-    g.beginPath(); g.ellipse(x - hr * 0.35, y - hr * 0.85, hr * 0.32, hr * 0.16, -0.5, 0, TAU); g.fill();
-  } else if (hat === 'cap') {
+  if (hat === 'cap') {
     g.fillStyle = '#e04040';
     g.beginPath(); g.arc(x, y - hr * 0.1, hr * 1.02, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill(); g.stroke();
     g.fillStyle = '#c0392b';               // brim
@@ -147,10 +222,70 @@ function drawWardHatFront(g, hat, x, y, hr, t) {
       g.closePath(); g.fill(); g.stroke();
     }
   } else if (hat === 'crown') drawCrownAt(g, x, y - hr * 1.05, s);
+  else if (hat === 'cowboy') {
+    g.fillStyle = '#a3703a';
+    g.beginPath(); g.ellipse(x, y - hr * 0.52, hr * 1.5, hr * 0.36, 0, 0, TAU); g.fill(); g.stroke();
+    g.beginPath(); g.arc(x, y - hr * 0.52, hr * 0.72, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#6e4423';                 // band
+    roundRect(g, x - hr * 0.72, y - hr * 0.78, hr * 1.44, hr * 0.2, hr * 0.08); g.fill();
+    g.strokeStyle = 'rgba(20,16,10,0.35)'; g.lineWidth = 1.2 * s;   // brim curl
+    g.beginPath(); g.ellipse(x, y - hr * 0.56, hr * 1.28, hr * 0.24, 0, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+  } else if (hat === 'party') {
+    const lean = 0.18;
+    g.fillStyle = '#e08bd0';
+    g.beginPath();
+    g.moveTo(x - hr * 0.6, y - hr * 0.7);
+    g.lineTo(x + hr * lean, y - hr * 2.15);
+    g.lineTo(x + hr * 0.6, y - hr * 0.7);
+    g.closePath(); g.fill(); g.stroke();
+    g.save(); g.clip();                      // diagonal stripes inside the cone
+    g.strokeStyle = '#ffd23f'; g.lineWidth = hr * 0.16;
+    for (let k = -2; k <= 3; k++) {
+      g.beginPath(); g.moveTo(x - hr + k * hr * 0.45, y - hr * 0.5);
+      g.lineTo(x - hr * 0.3 + k * hr * 0.45, y - hr * 2.3); g.stroke();
+    }
+    g.restore();
+    g.strokeStyle = OUTLINE;
+    g.fillStyle = '#ffd23f';                 // pom
+    g.beginPath(); g.arc(x + hr * lean, y - hr * 2.18, hr * 0.2, 0, TAU); g.fill(); g.stroke();
+  } else if (hat === 'phones') {
+    g.strokeStyle = '#2c3646'; g.lineWidth = hr * 0.2;
+    g.beginPath(); g.arc(x, y, hr * 1.12, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    g.strokeStyle = OUTLINE; g.lineWidth = 1.6 * s;
+    g.fillStyle = '#e04040';                 // cups over the ears
+    for (const sd of [-1, 1]) {
+      roundRect(g, x + sd * hr * 1.0 - hr * 0.2, y - hr * 0.3, hr * 0.4, hr * 0.6, hr * 0.16);
+      g.fill(); g.stroke();
+      g.fillStyle = '#c0392b';
+      g.beginPath(); g.arc(x + sd * hr * 1.0, y, hr * 0.1, 0, TAU); g.fill();
+      g.fillStyle = '#e04040';
+    }
+  } else if (hat === 'halo') {
+    const bob2 = Math.sin((t || 0) * 2.2) * hr * 0.08;
+    g.globalAlpha = 0.45;                    // glow
+    g.strokeStyle = '#ffe98a'; g.lineWidth = hr * 0.3;
+    g.beginPath(); g.ellipse(x, y - hr * 1.6 + bob2, hr * 0.72, hr * 0.2, 0, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+    g.strokeStyle = '#ffd23f'; g.lineWidth = hr * 0.14;
+    g.beginPath(); g.ellipse(x, y - hr * 1.6 + bob2, hr * 0.72, hr * 0.2, 0, 0, TAU); g.stroke();
+  } else if (hat === 'wizard') {
+    g.fillStyle = '#3b2f6e';
+    g.beginPath(); g.ellipse(x, y - hr * 0.58, hr * 1.32, hr * 0.3, 0, 0, TAU); g.fill(); g.stroke();
+    g.beginPath();
+    g.moveTo(x - hr * 0.62, y - hr * 0.66);
+    g.quadraticCurveTo(x + hr * 0.1, y - hr * 1.5, x + hr * 0.42, y - hr * 2.4);
+    g.quadraticCurveTo(x + hr * 0.5, y - hr * 1.3, x + hr * 0.62, y - hr * 0.66);
+    g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#ffd23f';                 // stars + moon
+    g.font = Math.round(hr * 0.42) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('★', x - hr * 0.12, y - hr * 1.15);
+    g.fillText('☾', x + hr * 0.28, y - hr * 1.7);
+    g.textBaseline = 'alphabetic';
+  }
 }
-/* facial hair, front view — face center (x,y≈mouth line), scale s */
-function drawFaceHairFront(g, face, x, y, s, skinV) {
-  const c = '#503a26';
+/* facial hair, front view — face center (x,y≈mouth line), scale s, colored col */
+function drawFaceHairFront(g, face, x, y, s, skinV, col) {
+  const c = col || '#503a26';
   g.fillStyle = c; g.strokeStyle = c;
   if (face === 'stache' || face === 'bar') {
     g.beginPath(); g.ellipse(x - 3.2 * s, y - 1.2 * s, 3.4 * s, 1.5 * s, 0.18, 0, TAU); g.fill();
@@ -168,6 +303,16 @@ function drawFaceHairFront(g, face, x, y, s, skinV) {
     g.closePath(); g.fill();
     g.fillStyle = skinTone(skinV == null ? 35 : skinV);   // mouth window
     g.beginPath(); g.ellipse(x, y + 0.4 * s, 3 * s, 1.8 * s, 0, 0, TAU); g.fill();
+  } else if (face === 'chops') {
+    for (const sd of [-1, 1]) {              // sideburns hugging the jaw
+      g.beginPath();
+      g.moveTo(x + sd * 8.6 * s, y - 5.5 * s);
+      g.quadraticCurveTo(x + sd * 9.4 * s, y - 0.5 * s, x + sd * 6.2 * s, y + 2.4 * s);
+      g.quadraticCurveTo(x + sd * 5.4 * s, y - 0.5 * s, x + sd * 6.4 * s, y - 5 * s);
+      g.closePath(); g.fill();
+    }
+  } else if (face === 'soul') {
+    g.beginPath(); g.ellipse(x, y + 2.6 * s, 1.5 * s, 1 * s, 0, 0, TAU); g.fill();
   }
 }
 
@@ -233,6 +378,7 @@ export function drawDiverTop(g, o) {
       g.beginPath(); g.arc(-r * 0.06, r * 0.0, r * 0.05, 0, TAU); g.fill();
     }
   }
+  if (o.ward) drawHairTop(g, o.ward.hair, o.ward.hairCol || DEF_HAIR_COL, r);
   const hw = headwear(o.cos, o.ward);
   if (hw === 'crown') drawCrownAt(g, 0, -r * 0.72, r / 12);
   else if (hw === 'prop') drawPropAt(g, 0, -r * 0.78, r / 13, o.t);
@@ -245,13 +391,43 @@ export function drawDiverTop(g, o) {
   }
   g.restore();
 }
+/* hair seen from above (translated/rotated body space) */
+function drawHairTop(g, style, col, r) {
+  if (!style || style === 'none') return;
+  g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+  g.fillStyle = col;
+  if (style === 'bowl' || style === 'long' || style === 'pony') {
+    g.beginPath(); g.arc(0, -r * 0.25, r * 0.62, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill(); g.stroke();
+    if (style === 'pony') {                  // tail trailing behind
+      g.beginPath(); g.ellipse(0, r * 0.05, r * 0.16, r * 0.42, 0, 0, TAU); g.fill(); g.stroke();
+    }
+    if (style === 'long') {                  // curtains at the sides
+      for (const sd of [-1, 1]) {
+        g.beginPath(); g.ellipse(sd * r * 0.72, -r * 0.05, r * 0.18, r * 0.4, sd * 0.3, 0, TAU); g.fill(); g.stroke();
+      }
+    }
+  } else if (style === 'spikes') {
+    for (let k = 0; k < 5; k++) {
+      const a = Math.PI * (1.1 + k * 0.2);
+      const bx = Math.cos(a) * r * 0.5, by = Math.sin(a) * r * 0.5 - r * 0.15;
+      g.beginPath();
+      g.moveTo(bx - r * 0.09, by); g.lineTo(bx + Math.cos(a) * r * 0.38, by + Math.sin(a) * r * 0.38);
+      g.lineTo(bx + r * 0.09, by); g.closePath(); g.fill(); g.stroke();
+    }
+    g.beginPath(); g.arc(0, -r * 0.25, r * 0.45, 0, TAU); g.fill(); g.stroke();
+  } else if (style === 'curls') {
+    for (let k = 0; k < 6; k++) {
+      const a = Math.PI * (1.05 + k * 0.18);
+      g.beginPath(); g.arc(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55 - r * 0.12, r * 0.2, 0, TAU); g.fill(); g.stroke();
+    }
+  } else if (style === 'mohawk') {
+    roundRect(g, -r * 0.12, -r * 0.85, r * 0.24, r * 1.0, r * 0.1); g.fill(); g.stroke();
+  }
+}
 /* wardrobe hats seen from above (drawn in the translated/rotated body space) */
 function drawWardHatTop(g, hat, r) {
   g.strokeStyle = OUTLINE; g.lineWidth = 2;
-  if (hat === 'hairb' || hat === 'hairy') {
-    g.fillStyle = hat === 'hairb' ? '#6b4423' : '#e8c34a';
-    g.beginPath(); g.arc(0, -r * 0.25, r * 0.62, Math.PI * 1.05, Math.PI * 1.95); g.closePath(); g.fill(); g.stroke();
-  } else if (hat === 'cap') {
+  if (hat === 'cap') {
     g.fillStyle = '#e04040';
     g.beginPath(); g.arc(0, -r * 0.3, r * 0.5, 0, TAU); g.fill(); g.stroke();
     g.fillStyle = '#c0392b';
@@ -274,6 +450,33 @@ function drawWardHatTop(g, hat, r) {
       g.beginPath(); g.ellipse(sd * r * 0.62, -r * 0.3, r * 0.28, r * 0.14, sd * 0.5, 0, TAU); g.fill(); g.stroke();
     }
   } else if (hat === 'crown') drawCrownAt(g, 0, -r * 0.72, r / 12);
+  else if (hat === 'cowboy') {
+    g.fillStyle = '#a3703a';
+    g.beginPath(); g.ellipse(0, -r * 0.28, r * 0.85, r * 0.62, 0, 0, TAU); g.fill(); g.stroke();
+    g.beginPath(); g.arc(0, -r * 0.28, r * 0.4, 0, TAU); g.fill(); g.stroke();
+    g.strokeStyle = '#6e4423'; g.lineWidth = r * 0.08;
+    g.beginPath(); g.arc(0, -r * 0.28, r * 0.32, 0, TAU); g.stroke();
+  } else if (hat === 'party') {
+    g.fillStyle = '#e08bd0';
+    g.beginPath(); g.arc(0, -r * 0.3, r * 0.42, 0, TAU); g.fill(); g.stroke();
+    g.fillStyle = '#ffd23f';
+    g.beginPath(); g.arc(0, -r * 0.3, r * 0.14, 0, TAU); g.fill(); g.stroke();
+  } else if (hat === 'phones') {
+    g.strokeStyle = '#2c3646'; g.lineWidth = r * 0.16;
+    g.beginPath(); g.moveTo(-r * 0.72, -r * 0.1); g.quadraticCurveTo(0, -r * 0.75, r * 0.72, -r * 0.1); g.stroke();
+    g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+    g.fillStyle = '#e04040';
+    for (const sd of [-1, 1]) { g.beginPath(); g.arc(sd * r * 0.75, 0, r * 0.2, 0, TAU); g.fill(); g.stroke(); }
+  } else if (hat === 'halo') {
+    g.strokeStyle = '#ffd23f'; g.lineWidth = r * 0.1;
+    g.beginPath(); g.arc(0, -r * 0.42, r * 0.5, 0, TAU); g.stroke();
+  } else if (hat === 'wizard') {
+    g.fillStyle = '#3b2f6e';
+    g.beginPath(); g.arc(0, -r * 0.28, r * 0.6, 0, TAU); g.fill(); g.stroke();
+    g.fillStyle = '#ffd23f';
+    g.font = Math.round(r * 0.4) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('★', 0, -r * 0.28); g.textBaseline = 'alphabetic';
+  }
 }
 
 /* full standing front view — THE board model. Local units: ~56 tall, feet at y=28.
@@ -402,7 +605,7 @@ export function drawDiverStand(g, o) {
   } else {
     g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
     g.beginPath(); g.arc(0, -13, 2.8, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
-    drawFaceHairFront(g, ward.face, 0, -11.5, 1, skinV);
+    drawFaceHairFront(g, ward.face, 0, -11.5, 1, skinV, ward.faceCol || DEF_FACE_COL);
   }
   if (cos.includes('nose')) {
     g.fillStyle = '#e04040'; g.strokeStyle = OUTLINE; g.lineWidth = 1.5;
@@ -410,7 +613,8 @@ export function drawDiverStand(g, o) {
     g.fillStyle = 'rgba(255,255,255,0.75)';
     g.beginPath(); g.arc(-0.8, -16.2, 0.8, 0, TAU); g.fill();
   }
-  // headwear (earned crown > earned prop > wardrobe hat)
+  // hair first (colored), then headwear over it (earned crown > earned prop > hat)
+  drawHairFront(g, ward.hair, ward.hairCol || DEF_HAIR_COL, 0, -17, 10, o.t);
   const hw = headwear(cos, ward);
   if (hw === 'crown') drawCrownAt(g, 0, -27.5, 1);
   else if (hw === 'prop') drawPropAt(g, 0, -26.5, 1, o.t);

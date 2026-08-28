@@ -251,7 +251,16 @@ const SHIRTC={orange:'#ff8c42',blue:'#4d9de0',red:'#e04040',green:'#3a9d5c',purp
 const PANTSC={blue:'#2b6cb0',black:'#2d3436',red:'#c0392b',green:'#27ae60',shorts:'#c8a165'};
 const TRAILC={red:'#ff4757',blue:'#59a8ff',gold:'#ffd23f'};
 let cos={hat:'none',shirt:'orange',pants:'blue',face:'none',trail:'red'};
-try{const c=JSON.parse(lsGet('td_cos1')); if(c)for(const k in cos)if(c[k])cos[k]=c[k];}catch(e){}
+try{
+  const c=JSON.parse(lsGet('td_cos1'));
+  if(c)for(const k in cos)if(c[k])cos[k]=c[k];
+  // arcade wardrobe stores hair separately + new hat ids this game can't draw —
+  // fall back to the closest classic look so heads aren't suddenly bald
+  const KNOWN=['none','hairb','hairy','cap','beanie','tophat','viking','crown'];
+  if(c&&!KNOWN.includes(cos.hat))cos.hat='none';
+  if(c&&cos.hat==='none'&&c.hair&&c.hair!=='none')
+    cos.hat=c.hair==='spikes'||c.hair==='mohawk'?'hairy':'hairb';
+}catch(e){}
 /* skin tone: 0..100 slider, shared with the arcade via the same td_skin key */
 const SKINR=['#ffe7d1','#ffd9b3','#eab98b','#c68d5a','#9c6633','#6e4423'];
 let skin=(v=>isNaN(v)?35:clamp(v,0,100))(parseInt(lsGet('td_skin'),10));

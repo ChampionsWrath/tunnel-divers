@@ -1,24 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=23';
-import * as audio from './audio.js?v=23';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=23';
-import { Net, makeRoomCode } from './net.js?v=23';
-import tunnel from './games/tunnel.js?v=23';
-import stack from './games/stack.js?v=23';
-import crown from './games/crown.js?v=23';
-import brain from './games/brain.js?v=23';
-import blast from './games/blast.js?v=23';
-import food from './games/food.js?v=23';
-import homerun from './games/homerun.js?v=23';
-import trivia from './games/trivia.js?v=23';
-import ghost from './games/ghost.js?v=23';
-import greed from './games/greed.js?v=23';
-import lava from './games/lava.js?v=23';
-import rush from './games/rush.js?v=23';
-import { createBoard } from './board.js?v=23';
-import { drawDiverStand, WARDROBE } from './character.js?v=23';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=24';
+import * as audio from './audio.js?v=24';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=24';
+import { Net, makeRoomCode } from './net.js?v=24';
+import tunnel from './games/tunnel.js?v=24';
+import stack from './games/stack.js?v=24';
+import crown from './games/crown.js?v=24';
+import brain from './games/brain.js?v=24';
+import blast from './games/blast.js?v=24';
+import food from './games/food.js?v=24';
+import homerun from './games/homerun.js?v=24';
+import trivia from './games/trivia.js?v=24';
+import ghost from './games/ghost.js?v=24';
+import greed from './games/greed.js?v=24';
+import lava from './games/lava.js?v=24';
+import rush from './games/rush.js?v=24';
+import { createBoard } from './board.js?v=24';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=24';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -37,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 23;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 24;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -63,12 +63,10 @@ const S = {
   profile: {
     name: lsGet('td_name') || 'DIVER', color: PLAYER_COLORS[0],
     skin: (v => isNaN(v) ? 35 : clamp(v, 0, 100))(parseInt(lsGet('td_skin'), 10)),
-    // wardrobe shares td_cos1 with the solo game (hat/face render on THE DIVER)
+    // wardrobe shares td_cos1 with the solo game (renders on THE DIVER)
     ward: (() => {
-      try {
-        const c = JSON.parse(lsGet('td_cos1')) || {};
-        return { hat: c.hat || 'none', face: c.face || 'none' };
-      } catch (e) { return { hat: 'none', face: 'none' }; }
+      try { return migrateWard(JSON.parse(lsGet('td_cos1'))); }
+      catch (e) { return migrateWard({}); }
     })(),
   },
   mode: 'party',
@@ -97,10 +95,11 @@ $('skinIn').addEventListener('input', () => {
 function saveWard() {
   let c = {};
   try { c = JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { }
-  c.hat = S.profile.ward.hat; c.face = S.profile.ward.face;
+  const w = S.profile.ward;
+  c.hair = w.hair; c.hat = w.hat; c.face = w.face; c.hairCol = w.hairCol; c.faceCol = w.faceCol;
   lsSet('td_cos1', JSON.stringify(c));   // solo game reads the same store
 }
-const WARD_LBL = { hat: 'HATS & HAIR', face: 'FACIAL HAIR' };
+const WARD_LBL = { hair: 'HAIR', hat: 'HATS', face: 'FACIAL HAIR' };
 // solo-game-only wardrobe (shirt/pants/trail render in Tunnel Divers itself) —
 // edited here too since this screen replaced the solo game's cosmetics panel
 const SOLO_WARD = {
@@ -115,12 +114,60 @@ const SOLO_LBL = { shirt: 'SHIRT (solo game)', pants: 'PANTS (solo game)', trail
 function soloCos() {
   try { return JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { return {}; }
 }
+/* --- the color picker: a swatch dot per colorable row → H/S/L sliders --- */
+let pickOpen = null;   // 'hairCol' | 'faceCol' | null
+function parseHSL(str) {
+  const m = /hsl\((\d+)[, ]+(\d+)%[, ]+(\d+)%\)/.exec(str || '');
+  if (m) return [+m[1], +m[2], +m[3]];
+  return [25, 50, 28];   // ≈ the default browns
+}
+function buildColorPop(field) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:rgba(20,26,44,0.9);border:2px solid #2a3450;border-radius:12px;padding:10px 12px;margin:6px 0';
+  const [h0, s0, l0] = parseHSL(S.profile.ward[field]);
+  const mkSlide = (label, min, max, val, grad) => {
+    const lb = document.createElement('div');
+    lb.className = 'secLbl'; lb.style.margin = '4px 0 2px'; lb.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = 1; inp.value = val;
+    inp.className = 'slider';
+    inp.style.cssText = 'width:100%;height:12px;border-radius:7px;appearance:none;-webkit-appearance:none;outline:none;background:' + grad;
+    wrap.appendChild(lb); wrap.appendChild(inp);
+    return inp;
+  };
+  const hueG = 'linear-gradient(90deg,hsl(0,80%,55%),hsl(60,80%,55%),hsl(120,80%,55%),hsl(180,80%,55%),hsl(240,80%,55%),hsl(300,80%,55%),hsl(360,80%,55%))';
+  const hIn = mkSlide('HUE', 0, 360, h0, hueG);
+  const sIn = mkSlide('RICHNESS', 0, 100, s0, 'linear-gradient(90deg,#888,hsl(' + h0 + ',100%,50%))');
+  const lIn = mkSlide('BRIGHTNESS', 4, 96, l0, 'linear-gradient(90deg,#111,hsl(' + h0 + ',70%,50%),#fff)');
+  const apply = () => {
+    S.profile.ward[field] = 'hsl(' + hIn.value + ',' + sIn.value + '%,' + lIn.value + '%)';
+    sIn.style.background = 'linear-gradient(90deg,#888,hsl(' + hIn.value + ',100%,50%))';
+    lIn.style.background = 'linear-gradient(90deg,#111,hsl(' + hIn.value + ',70%,50%),#fff)';
+    saveWard();
+    const dot = document.getElementById('dot-' + field);
+    if (dot) dot.style.background = S.profile.ward[field];
+  };
+  for (const inp of [hIn, sIn, lIn]) inp.addEventListener('input', apply);
+  return wrap;
+}
 function buildWardUI() {
   const el = $('wardRows'); el.innerHTML = '';
-  const mkRow = (label, opts, getSel, onPick) => {
+  const mkRow = (label, opts, getSel, onPick, colorField) => {
     const lbl = document.createElement('div');
     lbl.className = 'secLbl'; lbl.textContent = label;
+    if (colorField) {   // the RGB dot — tap to open the color sliders
+      const dot = document.createElement('button');
+      dot.id = 'dot-' + colorField;
+      dot.title = 'pick a color';
+      dot.style.cssText = 'width:20px;height:20px;border-radius:50%;border:2px solid #ffeccf;margin-left:8px;vertical-align:middle;cursor:pointer;background:' + (S.profile.ward[colorField] || '#6b4423');
+      dot.addEventListener('click', () => {
+        pickOpen = pickOpen === colorField ? null : colorField;
+        audio.sfx.ui(); buildWardUI();
+      });
+      lbl.appendChild(dot);
+    }
     el.appendChild(lbl);
+    if (colorField && pickOpen === colorField) el.appendChild(buildColorPop(colorField));
     const chips = document.createElement('div'); chips.className = 'chips';
     for (const [id, nm] of opts) {
       const b = document.createElement('button');
@@ -131,10 +178,12 @@ function buildWardUI() {
     }
     el.appendChild(chips);
   };
+  const colorFor = { hair: 'hairCol', face: 'faceCol' };
   for (const cat in WARDROBE)
     mkRow(WARD_LBL[cat], WARDROBE[cat],
       () => S.profile.ward[cat],
-      id => { S.profile.ward[cat] = id; saveWard(); });
+      id => { S.profile.ward[cat] = id; saveWard(); },
+      colorFor[cat]);
   for (const cat in SOLO_WARD)
     mkRow(SOLO_LBL[cat], SOLO_WARD[cat],
       () => soloCos()[cat] || SOLO_WARD[cat][0][0],
@@ -176,7 +225,7 @@ function lobbyPlayers() {
   rows.sort((a, b) => a.nid < b.nid ? -1 : 1);
   return rows.map((r, i) => ({
     id: r.nid, name: r.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-    skin: r.skin == null ? 35 : r.skin, ward: r.ward || { hat: 'none', face: 'none' },
+    skin: r.skin == null ? 35 : r.skin, ward: migrateWard(r.ward),
     local: r.nid === S.net.selfId, slot: 0, bot: false,
   }));
 }
@@ -256,11 +305,15 @@ $('btnAddLocal').addEventListener('click', () => {
 $('btnAddBot').addEventListener('click', () => {
   audio.sfx.ui();
   const names = ['CHAD', 'BLINKY', 'MOOSE', 'GARY'];
-  const hats = WARDROBE.hat, faces = WARDROBE.face;
+  const pick = arr => arr[(Math.random() * arr.length) | 0][0];
   S.locals.push({
     id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4],
     color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0,
-    ward: { hat: hats[(Math.random() * hats.length) | 0][0], face: faces[(Math.random() * faces.length) | 0][0] },
+    ward: {
+      hair: pick(WARDROBE.hair), hat: pick(WARDROBE.hat), face: pick(WARDROBE.face),
+      hairCol: 'hsl(' + ((Math.random() * 360) | 0) + ',' + (30 + Math.random() * 60 | 0) + '%,' + (20 + Math.random() * 55 | 0) + '%)',
+      faceCol: DEF_FACE_COL,
+    },
     local: true, slot: -1, bot: true,
   });
   renderLobby();
