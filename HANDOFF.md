@@ -22,6 +22,26 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 21) — wardrobe expansion + color pickers
+- ward is now {hair, hat, face, hairCol, faceCol}. HAIR is its own category
+  drawn on the FRONT of the head (drawHairFront/drawHairTop — Sam's spikes
+  complaint fixed: spikes mount on the visible crown, leaning forward),
+  layered UNDER hats. Styles: bowl/spikes/curls/mohawk/pony (animated
+  sway + tie)/long (face-framing curtains drawn before the cap).
+- New hats: cowboy/party (clipped stripes + pom)/phones/halo (glow+bob)/
+  wizard (star+moon). New facial: chops/soul. All have top-down versions.
+- **Color pickers**: hair + facial hair rows on the CHARACTER screen get a
+  color dot (#dot-hairCol/#dot-faceCol) → HUE/RICHNESS/BRIGHTNESS sliders
+  (buildColorPop in main.js), stored as 'hsl(H,S%,L%)' strings in td_cos1,
+  net-synced via profile.ward. parseHSL() re-seeds sliders.
+- migrateWard() in character.js: converts old {hat:'hairb'/'hairy'} saves;
+  applied at profile load AND on remote peers in lobbyPlayers. Bots roll
+  random hair/hat/hairCol. Solo game maps unknown hat ids → closest classic
+  (spikes/mohawk→hairy, other hair→hairb) so it never renders bald.
+- Verified: picker persists hsl + preview live; 12-diver showcase reviewed
+  (screenshot sent to Sam); full bot board game + top-view renders clean.
+  Build 24, deployed 00d6710.
+
 ## Session 2026-08-26 (round 20) — character overhaul + wardrobe + CHARACTER screen
 - character.js rewritten. Standing model: gradient torso + zipper, skin
   HANDS on arm ends, head highlight/chin shade, ears, wrap-around goggle
