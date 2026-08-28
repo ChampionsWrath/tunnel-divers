@@ -1,22 +1,22 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=17';
-import * as audio from './audio.js?v=17';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=17';
-import { Net, makeRoomCode } from './net.js?v=17';
-import tunnel from './games/tunnel.js?v=17';
-import stack from './games/stack.js?v=17';
-import crown from './games/crown.js?v=17';
-import brain from './games/brain.js?v=17';
-import blast from './games/blast.js?v=17';
-import food from './games/food.js?v=17';
-import homerun from './games/homerun.js?v=17';
-import trivia from './games/trivia.js?v=17';
-import ghost from './games/ghost.js?v=17';
-import greed from './games/greed.js?v=17';
-import lava from './games/lava.js?v=17';
-import { createBoard } from './board.js?v=17';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=18';
+import * as audio from './audio.js?v=18';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=18';
+import { Net, makeRoomCode } from './net.js?v=18';
+import tunnel from './games/tunnel.js?v=18';
+import stack from './games/stack.js?v=18';
+import crown from './games/crown.js?v=18';
+import brain from './games/brain.js?v=18';
+import blast from './games/blast.js?v=18';
+import food from './games/food.js?v=18';
+import homerun from './games/homerun.js?v=18';
+import trivia from './games/trivia.js?v=18';
+import ghost from './games/ghost.js?v=18';
+import greed from './games/greed.js?v=18';
+import lava from './games/lava.js?v=18';
+import { createBoard } from './board.js?v=18';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
 const MODES = [
@@ -56,7 +56,10 @@ resize(); attachTouch(cv);
 /* ---------------- app state ---------------- */
 const S = {
   screen: 'home',
-  profile: { name: lsGet('td_name') || 'DIVER', color: PLAYER_COLORS[0] },
+  profile: {
+    name: lsGet('td_name') || 'DIVER', color: PLAYER_COLORS[0],
+    skin: (v => isNaN(v) ? 35 : clamp(v, 0, 100))(parseInt(lsGet('td_skin'), 10)),
+  },
   mode: 'party',
   locals: [],          // [{id,name,color,local:true,slot,bot}]
   net: null, code: null,
@@ -73,6 +76,11 @@ $('nameIn').addEventListener('change', () => {
   S.profile.name = ($('nameIn').value.trim() || 'DIVER').slice(0, 12);
   lsSet('td_name', S.profile.name);
 });
+$('skinIn').value = S.profile.skin;
+$('skinIn').addEventListener('input', () => {
+  S.profile.skin = clamp(+$('skinIn').value, 0, 100);
+  lsSet('td_skin', '' + S.profile.skin);
+});
 
 function show(scr) {
   S.screen = scr;
@@ -84,16 +92,20 @@ function show(scr) {
 
 /* ---------------- lobby ---------------- */
 function resetLocals() {
-  S.locals = [{ id: 'L0', name: S.profile.name, color: S.profile.color, local: true, slot: 0, bot: false }];
+  S.locals = [{ id: 'L0', name: S.profile.name, color: S.profile.color, skin: S.profile.skin, local: true, slot: 0, bot: false }];
 }
 function lobbyPlayers() {
   if (!S.net) return S.locals;
   // deterministic shared ordering: self + peers, sorted by net id
-  const rows = [{ nid: S.net.selfId, name: S.profile.name }];
-  for (const pid in S.net.peers) rows.push({ nid: pid, name: (S.net.peers[pid] || {}).name || 'DIVER' });
+  const rows = [{ nid: S.net.selfId, name: S.profile.name, skin: S.profile.skin }];
+  for (const pid in S.net.peers) {
+    const pr = S.net.peers[pid] || {};
+    rows.push({ nid: pid, name: pr.name || 'DIVER', skin: pr.skin });
+  }
   rows.sort((a, b) => a.nid < b.nid ? -1 : 1);
   return rows.map((r, i) => ({
     id: r.nid, name: r.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+    skin: r.skin == null ? 35 : r.skin,
     local: r.nid === S.net.selfId, slot: 0, bot: false,
   }));
 }
@@ -166,13 +178,13 @@ function renderLobby() {
 }
 $('btnAddLocal').addEventListener('click', () => {
   audio.sfx.ui();
-  S.locals.push({ id: 'L' + S.locals.length + uid(), name: 'PLAYER ' + (S.locals.filter(p => !p.bot).length + 1), color: PLAYER_COLORS[S.locals.length], local: true, slot: 1, bot: false });
+  S.locals.push({ id: 'L' + S.locals.length + uid(), name: 'PLAYER ' + (S.locals.filter(p => !p.bot).length + 1), color: PLAYER_COLORS[S.locals.length], skin: 35, local: true, slot: 1, bot: false });
   renderLobby();
 });
 $('btnAddBot').addEventListener('click', () => {
   audio.sfx.ui();
   const names = ['CHAD', 'BLINKY', 'MOOSE', 'GARY'];
-  S.locals.push({ id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4], color: PLAYER_COLORS[S.locals.length], local: true, slot: -1, bot: true });
+  S.locals.push({ id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4], color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0, local: true, slot: -1, bot: true });
   renderLobby();
 });
 $('btnLeave').addEventListener('click', () => {
@@ -195,7 +207,7 @@ async function goOnline(asHost) {
   $('netStatus').textContent = 'connecting…';
   S.net = new Net();
   try {
-    await S.net.join(code, { name: S.profile.name }, asHost);
+    await S.net.join(code, { name: S.profile.name, skin: S.profile.skin }, asHost);
   } catch (e) { $('netStatus').textContent = '⚠ ' + e.message; S.net = null; return; }
   S.code = code; $('netStatus').textContent = '';
   // keep the status line honest while waiting (relay health, hints)

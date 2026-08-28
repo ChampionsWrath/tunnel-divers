@@ -253,6 +253,12 @@ const PANTSC={blue:'#2b6cb0',black:'#2d3436',red:'#c0392b',green:'#27ae60',short
 const TRAILC={red:'#ff4757',blue:'#59a8ff',gold:'#ffd23f'};
 let cos={hat:'none',shirt:'orange',pants:'blue',face:'none',trail:'red'};
 try{const c=JSON.parse(lsGet('td_cos1')); if(c)for(const k in cos)if(c[k])cos[k]=c[k];}catch(e){}
+/* skin tone: 0..100 slider, shared with the arcade via the same td_skin key */
+const SKINR=['#ffe7d1','#ffd9b3','#eab98b','#c68d5a','#9c6633','#6e4423'];
+let skin=(v=>isNaN(v)?35:clamp(v,0,100))(parseInt(lsGet('td_skin'),10));
+function skinCol(){
+  const t=skin/100*(SKINR.length-1),i=Math.min(SKINR.length-2,Math.floor(t));
+  return mixHex(SKINR[i],SKINR[i+1],t-i);}
 function shirtCol(t){return cos.shirt==='rainbow'?'hsl('+((t*80)%360)+' 85% 60%)':SHIRTC[cos.shirt]||'#ff8c42';}
 function pantsCol(t){return cos.pants==='rainbow'?'hsl('+((t*80+120)%360)+' 85% 55%)':PANTSC[cos.pants]||'#2b6cb0';}
 function trailCol(f,t){
@@ -947,7 +953,10 @@ updateHint();
 
 /* cosmetics panel */
 function buildCos(){
-  let html='';
+  let html='<div class="cosRow"><div class="cosLbl">SKIN TONE</div>'+
+    '<input type="range" id="skinSlide" min="0" max="100" step="1" value="'+skin+'" '+
+    'style="width:100%;height:14px;border-radius:8px;appearance:none;-webkit-appearance:none;outline:none;'+
+    'background:linear-gradient(90deg,'+SKINR.join(',')+')"></div>';
   for(const cat in COSOPTS){
     html+='<div class="cosRow"><div class="cosLbl">'+CATLBL[cat]+'</div><div class="chips">';
     for(const [id,nm] of COSOPTS[cat]){
@@ -964,6 +973,8 @@ function buildCos(){
       html+='<button class="cchip'+sel+'" data-cat="'+cat+'" data-id="'+id+'">'+dot+nm+'</button>';}
     html+='</div></div>';}
   $('cosRows').innerHTML=html;
+  $('skinSlide').addEventListener('input',()=>{
+    skin=clamp(+$('skinSlide').value,0,100); lsSet('td_skin',''+skin);});
   $('cosRows').querySelectorAll('.cchip').forEach(el=>{
     el.addEventListener('click',()=>{
       cos[el.dataset.cat]=el.dataset.id;
@@ -1068,7 +1079,7 @@ function drawBody(g,t,back,panic){
     if(shorts){
       g.strokeStyle='#c8a165'; g.lineWidth=6.5;
       g.beginPath(); g.moveTo(s2*6,10); g.lineTo(lerp(s2*6,ex,0.45),lerp(10,ey,0.45)); g.stroke();
-      g.strokeStyle='#ffd9b3'; g.lineWidth=5;
+      g.strokeStyle=skinCol(); g.lineWidth=5;
       g.beginPath(); g.moveTo(lerp(s2*6,ex,0.45),lerp(10,ey,0.45)); g.lineTo(ex,ey); g.stroke();
     }else{
       g.strokeStyle=pCol; g.lineWidth=6;
@@ -1085,7 +1096,7 @@ function drawBody(g,t,back,panic){
     g.beginPath(); g.arc(0,-16,10.5,0,TAU); g.fill(); g.stroke();
     g.fillStyle='#2d3436'; rrOn(g,-9.5,-18,19,4.5,2); g.fill();
   }else{
-    g.fillStyle='#ffd9b3'; g.strokeStyle='#14100a'; g.lineWidth=3;
+    g.fillStyle=skinCol(); g.strokeStyle='#14100a'; g.lineWidth=3;
     g.beginPath(); g.arc(0,-16,10.5,0,TAU); g.fill(); g.stroke();
     g.fillStyle='#2d3436'; rrOn(g,-9,-22,18,7,3); g.fill();
     g.fillStyle='#9ad3ff';

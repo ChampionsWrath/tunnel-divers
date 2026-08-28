@@ -6,6 +6,16 @@ import { TAU, clamp } from './util.js';
 
 export const SKIN = '#ffd9b3', OUTLINE = '#14100a', GOGGLE = '#2d3436', LENS = '#9ad3ff';
 
+/* skin-tone slider ramp: 0..100 sweeps light → deep. skinTone(35) ≈ the classic SKIN. */
+export const SKIN_RAMP = ['#ffe7d1', '#ffd9b3', '#eab98b', '#c68d5a', '#9c6633', '#6e4423'];
+export function skinTone(v) {
+  const t = clamp((+v || 0) / 100, 0, 1) * (SKIN_RAMP.length - 1);
+  const i = Math.min(SKIN_RAMP.length - 2, Math.floor(t)), f = t - i;
+  const a = parseInt(SKIN_RAMP[i].slice(1), 16), b = parseInt(SKIN_RAMP[i + 1].slice(1), 16);
+  const ch = s => Math.round(((a >> s) & 255) + (((b >> s) & 255) - ((a >> s) & 255)) * f);
+  return 'rgb(' + ch(16) + ',' + ch(8) + ',' + ch(0) + ')';
+}
+
 /* ---- cosmetic layers: one look, every game, updating as you collect ---- */
 function headwear(cos) {
   if (!cos) return null;
@@ -139,7 +149,7 @@ export function drawDiverStand(g, o) {
   g.beginPath(); g.moveTo(-9, -3); g.lineTo(-14, armY + Math.sin((o.t || 0) * 2.6) * 1.5); g.stroke();
   g.beginPath(); g.moveTo(9, -3); g.lineTo(14, armY - Math.sin((o.t || 0) * 2.6) * 1.5); g.stroke();
   // head
-  g.fillStyle = SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  g.fillStyle = o.skin != null ? skinTone(o.skin) : SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
   g.beginPath(); g.arc(0, -17, 10, 0, TAU); g.fill(); g.stroke();
   // goggles
   g.fillStyle = GOGGLE; roundRect(g, -8.5, -21.5, 17, 6, 3); g.fill();
@@ -256,7 +266,7 @@ export function drawBatter(g, o) {
   g.beginPath(); g.arc(0, 5, 3.2, 0, TAU); g.fill(); g.stroke();
   g.restore();
   // head in profile: goggle band + one lens facing the pitcher
-  g.fillStyle = SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
+  g.fillStyle = o.skin != null ? skinTone(o.skin) : SKIN; g.strokeStyle = OUTLINE; g.lineWidth = 3;
   g.beginPath(); g.arc(2, -18, 10, 0, TAU); g.fill(); g.stroke();
   g.fillStyle = GOGGLE; roundRect(g, -7, -22, 19, 4.5, 2); g.fill();
   g.fillStyle = LENS;

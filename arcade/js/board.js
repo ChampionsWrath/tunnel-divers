@@ -3,7 +3,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=17';
+import { drawDiverTop, drawDiverStand } from './character.js?v=18';
 
 function shadeCol(hex, f) {
   try {
@@ -79,7 +79,7 @@ class Board {
     this.maxTurns = ctx.maxTurns || 20;
     this.turn = 1; this.playerIdx = 0;
     this.players = ctx.players.map((p, i) => ({
-      id: p.id, name: p.name, color: p.color, local: p.local, slot: p.slot, bot: !!p.bot,
+      id: p.id, name: p.name, color: p.color, skin: p.skin, local: p.local, slot: p.slot, bot: !!p.bot,
       node: 0, coins: 15, items: [], cosmetics: [], shield: false, pending: null,
       ax: this.map[0].x, ay: this.map[0].y,   // animated position
     }));
@@ -819,7 +819,7 @@ class Board {
     g.fillStyle = 'rgba(0,0,0,0.4)';
     g.beginPath(); g.ellipse(px + ox2, py + Z * 0.4, Z * 1.7 * (active ? 1.15 : 1), Z * 0.55, 0, 0, TAU); g.fill();
     drawDiverStand(g, {
-      x: px + ox2, y: py - 28 * sc + Z * 0.2, scale: sc, color: p.color,
+      x: px + ox2, y: py - 28 * sc + Z * 0.2, scale: sc, color: p.color, skin: p.skin,
       t: this.tt + i * 1.7, cos: p.cosmetics,
       mood: this.state === 'reward' ? 'cheer' : 'idle',
     });

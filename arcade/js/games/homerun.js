@@ -2,7 +2,7 @@
 // The pitch comes AT you; HOLD to charge, RELEASE at the plate. Great contact at
 // full charge doesn't just clear the wall — it leaves the stadium, the sky, Earth.
 import { TAU, clamp, lerp, mulberry32, mixHex } from '../util.js';
-import { drawBatter } from '../character.js?v=17';
+import { drawBatter } from '../character.js?v=18';
 
 const PITCHES = 10;
 const FL_INTRO = 0.55, FL_HOLD = 0.65;   // batter-POV departure, then rest-at-distance hold
@@ -529,7 +529,7 @@ class HomerunGame {
     const swingAge = this.tt - this.swingT;
     const swing = swingAge >= 0 && swingAge < 0.3 ? swingAge / 0.3 : null;
     drawBatter(g, {
-      x: VX - 58 * s, y: plateY - 36 * s, scale: 2.2 * s, color: this.runner.color,
+      x: VX - 58 * s, y: plateY - 36 * s, scale: 2.2 * s, color: this.runner.color, skin: this.runner.skin,
       t: this.tt, charge: (this.phase === 'windup' || this.phase === 'throw') ? this.charge : 0,
       swing,
     });
