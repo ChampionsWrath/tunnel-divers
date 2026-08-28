@@ -22,6 +22,25 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 24) — dice reveal beat + fork landing previews
+- Dicing: settle at t=1.0 stores pendingMove and HOLDS until t=2.15 before
+  beginMove — the die pops to 1.4x and stays big; '🎲 N!' popup (drunk
+  stumble spells the odd/even verdict + number). ~34 frames of reveal.
+- Forks: advanceStep precomputes this.branchPreviews = per-option
+  {opt, land, path[], unsure} by tracing next[0] for the remaining steps
+  (moveSteps-1), stopping early at another fork (unsure=true → shows ⑂).
+  Pure map trace, identical on every client, no net traffic.
+- Render (after depth-sorted items, before dice): per option a PREV_COLS
+  color (yellow/cyan/pink): dashed marching-ants route line (lineDashOffset
+  animated), pulsing ellipse ring on the landing tile, bobbing pin above it
+  with the landing space's icon. Branch buttons relabeled '⬅ land: <icon>'
+  with a matching color chip; tapping the landing PIN also picks the route
+  (hit-test in the branch update case, before the first-tile hit-test).
+- Verified: reveal gap 34 frames; previews correct at rem=1 and rem=3
+  (4→5→6 land 6 vs 26→27→28 land 28) and actual landing matches the pin;
+  pin-tap selection; full bot game clean. Screenshot sent to Sam.
+- Build 27, deployed 4227c56.
+
 ## Session 2026-08-28 (round 23) — board network redesign + warp cannons
 - buildMap REWRITTEN: 37 explicit nodes (SPEC coords + EDGES list) — outer
   promenade + left midway (3→26-29→19, upward) + right midway (15→30-33→7,
