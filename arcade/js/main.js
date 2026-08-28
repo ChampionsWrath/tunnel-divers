@@ -1,23 +1,23 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=20';
-import * as audio from './audio.js?v=20';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=20';
-import { Net, makeRoomCode } from './net.js?v=20';
-import tunnel from './games/tunnel.js?v=20';
-import stack from './games/stack.js?v=20';
-import crown from './games/crown.js?v=20';
-import brain from './games/brain.js?v=20';
-import blast from './games/blast.js?v=20';
-import food from './games/food.js?v=20';
-import homerun from './games/homerun.js?v=20';
-import trivia from './games/trivia.js?v=20';
-import ghost from './games/ghost.js?v=20';
-import greed from './games/greed.js?v=20';
-import lava from './games/lava.js?v=20';
-import rush from './games/rush.js?v=20';
-import { createBoard } from './board.js?v=20';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=21';
+import * as audio from './audio.js?v=21';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=21';
+import { Net, makeRoomCode } from './net.js?v=21';
+import tunnel from './games/tunnel.js?v=21';
+import stack from './games/stack.js?v=21';
+import crown from './games/crown.js?v=21';
+import brain from './games/brain.js?v=21';
+import blast from './games/blast.js?v=21';
+import food from './games/food.js?v=21';
+import homerun from './games/homerun.js?v=21';
+import trivia from './games/trivia.js?v=21';
+import ghost from './games/ghost.js?v=21';
+import greed from './games/greed.js?v=21';
+import lava from './games/lava.js?v=21';
+import rush from './games/rush.js?v=21';
+import { createBoard } from './board.js?v=21';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -36,6 +36,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
+const BUILD = 21;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -78,6 +79,7 @@ $('nameIn').addEventListener('change', () => {
   S.profile.name = ($('nameIn').value.trim() || 'DIVER').slice(0, 12);
   lsSet('td_name', S.profile.name);
 });
+if ($('buildTag')) $('buildTag').textContent = 'build ' + BUILD + ' — everyone in a room must match';
 $('skinIn').value = S.profile.skin;
 $('skinIn').addEventListener('input', () => {
   S.profile.skin = clamp(+$('skinIn').value, 0, 100);
@@ -117,9 +119,10 @@ function netStatusLine() {
   const alone = n === 0, waited = (Date.now() - S.net.joinedAt) / 1000;
   let line = (S.net.isHost ? 'code ' + S.code + ' — share it! ' : '') + (n + 1) + ' in room';
   if (relays >= 0) line += ' · ' + relays + ' relay' + (relays === 1 ? '' : 's');
+  if (S.net.relayMode && S.net.relayMode()) line += ' · ⚡ relay mode (direct blocked — a bit slower, still works)';
   if (alone) {
     if (relays === 0 && waited > 5) line = '⚠ can\'t reach the relays — check your connection';
-    else if (waited > 20) line = '⚠ nobody found yet — same code on everyone\'s screen? Have friends refresh the page (old versions can\'t join new rooms)';
+    else if (waited > 20) line = '⚠ nobody found yet — same code on everyone\'s screen? EVERYONE must be on build ' + BUILD + ' (shown on the home screen) — refresh the page if not';
     else line += ' · 🔎 looking for players…';
   }
   return line;

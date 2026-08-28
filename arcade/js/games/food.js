@@ -2,7 +2,7 @@
 // Serve every item on a table's order to complete it. Most tables served in 75s wins.
 // Solo: the clock drains — every serve adds time, RUSH orders add a lot. Keep up!
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=20';
+import { drawDiverTop } from '../character.js?v=21';
 
 const T_LIMIT = 75, SOLO_START = 40;
 const ACC = 330, DRAG = 3.1, VMAX = 118, PRr = 4.4;   // virtual stage 100 x 100
