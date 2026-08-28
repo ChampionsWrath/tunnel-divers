@@ -1,24 +1,25 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=19';
-import * as audio from './audio.js?v=19';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=19';
-import { Net, makeRoomCode } from './net.js?v=19';
-import tunnel from './games/tunnel.js?v=19';
-import stack from './games/stack.js?v=19';
-import crown from './games/crown.js?v=19';
-import brain from './games/brain.js?v=19';
-import blast from './games/blast.js?v=19';
-import food from './games/food.js?v=19';
-import homerun from './games/homerun.js?v=19';
-import trivia from './games/trivia.js?v=19';
-import ghost from './games/ghost.js?v=19';
-import greed from './games/greed.js?v=19';
-import lava from './games/lava.js?v=19';
-import { createBoard } from './board.js?v=19';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=20';
+import * as audio from './audio.js?v=20';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=20';
+import { Net, makeRoomCode } from './net.js?v=20';
+import tunnel from './games/tunnel.js?v=20';
+import stack from './games/stack.js?v=20';
+import crown from './games/crown.js?v=20';
+import brain from './games/brain.js?v=20';
+import blast from './games/blast.js?v=20';
+import food from './games/food.js?v=20';
+import homerun from './games/homerun.js?v=20';
+import trivia from './games/trivia.js?v=20';
+import ghost from './games/ghost.js?v=20';
+import greed from './games/greed.js?v=20';
+import lava from './games/lava.js?v=20';
+import rush from './games/rush.js?v=20';
+import { createBoard } from './board.js?v=20';
 
-const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava };
+const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
   { id: 'party', name: 'Board Game', icon: '🎲', desc: 'THE CHAOTIC BOARDWALK — dice, coins, shops, piñatas, item cards, cosmetic steals… and a minigame every turn. Highest coins+cosmetics wins.' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
@@ -32,6 +33,7 @@ const MODES = [
   { id: 'ghost', name: ghost.name, icon: ghost.icon, desc: ghost.desc },
   { id: 'greed', name: greed.name, icon: greed.icon, desc: greed.desc },
   { id: 'lava', name: lava.name, icon: lava.icon, desc: lava.desc },
+  { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
 const $ = id => document.getElementById(id);
