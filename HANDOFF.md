@@ -22,6 +22,26 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 15) — skin tone slider
+- Sam: "add a skin tone cosmetic to the character editor, make it a slider."
+- tunnel-divers.html cosmetics panel: SKIN TONE row at the top — gradient
+  range slider (0-100 over 6-stop ramp SKINR light→deep), skinCol() applied
+  to drawBody head + shorts legs, live in the preview.
+- Arcade: slider on the home screen under the name field (#skinIn);
+  S.profile.skin → net hello/hi payload → lobbyPlayers rows → board players
+  (board.js copies skin) → minigame player copies. Rendered in
+  drawDiverStand (board) and drawBatter (homerun); drawDiverTop deliberately
+  untouched — the top-down view is wetsuit+goggles, no skin pixels.
+- character.js: exports SKIN_RAMP + skinTone(v 0-100); drawDiverStand and
+  drawBatter honor o.skin (default = classic SKIN #ffd9b3 ≈ tone 35).
+- **Shared key: both apps read/write localStorage td_skin** — pick a tone in
+  either place and it follows you (verified: editor slider inited at the
+  value the arcade tab had just saved). Bots get a random tone on add.
+- Verified headlessly at v18: slider→profile→board flow (skins [88,32,0]),
+  chin-pixel samples track the slider (light/tan/deep at 0/50/100), no
+  console errors in either app. Deployed (f85f30a).
+- RULE REMINDER: any new place the model shows a face must pass o.skin.
+
 ## Session 2026-08-26 (round 14) — ⭐ ONLINE MULTIPLAYER ACTUALLY WORKS NOW ⭐
 Sam: "multiplayer still isn't working." It never worked past the lobby. Four
 root causes found by driving two live-site tabs through a REAL online board
