@@ -1,24 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=24';
-import * as audio from './audio.js?v=24';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=24';
-import { Net, makeRoomCode } from './net.js?v=24';
-import tunnel from './games/tunnel.js?v=24';
-import stack from './games/stack.js?v=24';
-import crown from './games/crown.js?v=24';
-import brain from './games/brain.js?v=24';
-import blast from './games/blast.js?v=24';
-import food from './games/food.js?v=24';
-import homerun from './games/homerun.js?v=24';
-import trivia from './games/trivia.js?v=24';
-import ghost from './games/ghost.js?v=24';
-import greed from './games/greed.js?v=24';
-import lava from './games/lava.js?v=24';
-import rush from './games/rush.js?v=24';
-import { createBoard } from './board.js?v=24';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=24';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=25';
+import * as audio from './audio.js?v=25';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=25';
+import { Net, makeRoomCode } from './net.js?v=25';
+import tunnel from './games/tunnel.js?v=25';
+import stack from './games/stack.js?v=25';
+import crown from './games/crown.js?v=25';
+import brain from './games/brain.js?v=25';
+import blast from './games/blast.js?v=25';
+import food from './games/food.js?v=25';
+import homerun from './games/homerun.js?v=25';
+import trivia from './games/trivia.js?v=25';
+import ghost from './games/ghost.js?v=25';
+import greed from './games/greed.js?v=25';
+import lava from './games/lava.js?v=25';
+import rush from './games/rush.js?v=25';
+import { createBoard } from './board.js?v=25';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=25';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -37,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 24;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 25;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -97,20 +97,17 @@ function saveWard() {
   try { c = JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { }
   const w = S.profile.ward;
   c.hair = w.hair; c.hat = w.hat; c.face = w.face; c.hairCol = w.hairCol; c.faceCol = w.faceCol;
+  c.body = w.body; c.shirtCol = w.shirtCol;
   lsSet('td_cos1', JSON.stringify(c));   // solo game reads the same store
 }
-const WARD_LBL = { hair: 'HAIR', hat: 'HATS', face: 'FACIAL HAIR' };
-// solo-game-only wardrobe (shirt/pants/trail render in Tunnel Divers itself) —
-// edited here too since this screen replaced the solo game's cosmetics panel
+const WARD_LBL = { body: 'BODY', hair: 'HAIR', hat: 'HATS', face: 'FACIAL HAIR' };
+// clothes stay light — the BOARD GAME hands out the flashy cosmetics. Just a
+// t-shirt color; everyone wears blue jeans. Trail is the solo game's flair.
 const SOLO_WARD = {
-  shirt: [['orange', 'Orange'], ['blue', 'Blue'], ['red', 'Red'], ['green', 'Green'],
-  ['purple', 'Purple'], ['black', 'Black'], ['rainbow', 'Rainbow']],
-  pants: [['blue', 'Blue'], ['black', 'Black'], ['red', 'Red'], ['green', 'Green'],
-  ['shorts', 'Shorts'], ['rainbow', 'Rainbow']],
   trail: [['red', 'Red Scarf'], ['blue', 'Blue Scarf'], ['gold', 'Gold Scarf'], ['rainbow', 'Rainbow'],
   ['fire', 'Fire'], ['bubbles', 'Bubbles'], ['sparkle', 'Sparkle']],
 };
-const SOLO_LBL = { shirt: 'SHIRT (solo game)', pants: 'PANTS (solo game)', trail: 'TRAIL (solo game)' };
+const SOLO_LBL = { trail: 'TRAIL (solo game)' };
 function soloCos() {
   try { return JSON.parse(lsGet('td_cos1')) || {}; } catch (e) { return {}; }
 }
@@ -159,7 +156,8 @@ function buildWardUI() {
       const dot = document.createElement('button');
       dot.id = 'dot-' + colorField;
       dot.title = 'pick a color';
-      dot.style.cssText = 'width:20px;height:20px;border-radius:50%;border:2px solid #ffeccf;margin-left:8px;vertical-align:middle;cursor:pointer;background:' + (S.profile.ward[colorField] || '#6b4423');
+      dot.style.cssText = 'width:20px;height:20px;border-radius:50%;border:2px solid #ffeccf;margin-left:8px;vertical-align:middle;cursor:pointer;background:' +
+        (S.profile.ward[colorField] || (colorField === 'shirtCol' ? S.profile.color : '#6b4423'));
       dot.addEventListener('click', () => {
         pickOpen = pickOpen === colorField ? null : colorField;
         audio.sfx.ui(); buildWardUI();
@@ -184,6 +182,8 @@ function buildWardUI() {
       () => S.profile.ward[cat],
       id => { S.profile.ward[cat] = id; saveWard(); },
       colorFor[cat]);
+  // t-shirt: color only, no presets (blue jeans are house rules)
+  mkRow('T-SHIRT COLOR · 👖 blue jeans included', [], () => null, () => { }, 'shirtCol');
   for (const cat in SOLO_WARD)
     mkRow(SOLO_LBL[cat], SOLO_WARD[cat],
       () => soloCos()[cat] || SOLO_WARD[cat][0][0],
@@ -194,9 +194,9 @@ $('btnCustomClose').addEventListener('click', () => { audio.sfx.ui(); show('home
 function drawCharPreview(ts) {
   const pcv = $('charPrev'); if (!pcv) return;
   const pg = pcv.getContext('2d');
-  pg.clearRect(0, 0, 220, 220);
+  pg.clearRect(0, 0, 220, 180);
   drawDiverStand(pg, {
-    x: 110, y: 96, scale: 3.1, color: S.profile.color,
+    x: 110, y: 78, scale: 2.6, color: S.profile.color,
     t: ts / 1000, skin: S.profile.skin, ward: S.profile.ward,
     mood: Math.floor(ts / 2600) % 3 === 0 ? 'cheer' : 'idle',
   });
@@ -310,9 +310,11 @@ $('btnAddBot').addEventListener('click', () => {
     id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4],
     color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0,
     ward: {
+      body: Math.random() < 0.5 ? 'f' : 'm',
       hair: pick(WARDROBE.hair), hat: pick(WARDROBE.hat), face: pick(WARDROBE.face),
       hairCol: 'hsl(' + ((Math.random() * 360) | 0) + ',' + (30 + Math.random() * 60 | 0) + '%,' + (20 + Math.random() * 55 | 0) + '%)',
       faceCol: DEF_FACE_COL,
+      shirtCol: 'hsl(' + ((Math.random() * 360) | 0) + ',65%,52%)',
     },
     local: true, slot: -1, bot: true,
   });

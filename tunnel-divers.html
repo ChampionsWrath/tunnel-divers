@@ -260,14 +260,18 @@ try{
   if(c&&!KNOWN.includes(cos.hat))cos.hat='none';
   if(c&&cos.hat==='none'&&c.hair&&c.hair!=='none')
     cos.hat=c.hair==='spikes'||c.hair==='mohawk'?'hairy':'hairb';
+  if(c&&c.shirtCol)window.__shirtCol=c.shirtCol;   // arcade's custom tee color
 }catch(e){}
+cos.pants='blue';   // house rules: everyone wears blue jeans now
 /* skin tone: 0..100 slider, shared with the arcade via the same td_skin key */
 const SKINR=['#ffe7d1','#ffd9b3','#eab98b','#c68d5a','#9c6633','#6e4423'];
 let skin=(v=>isNaN(v)?35:clamp(v,0,100))(parseInt(lsGet('td_skin'),10));
 function skinCol(){
   const t=skin/100*(SKINR.length-1),i=Math.min(SKINR.length-2,Math.floor(t));
   return mixHex(SKINR[i],SKINR[i+1],t-i);}
-function shirtCol(t){return cos.shirt==='rainbow'?'hsl('+((t*80)%360)+' 85% 60%)':SHIRTC[cos.shirt]||'#ff8c42';}
+function shirtCol(t){
+  if(window.__shirtCol)return window.__shirtCol;
+  return cos.shirt==='rainbow'?'hsl('+((t*80)%360)+' 85% 60%)':SHIRTC[cos.shirt]||'#ff8c42';}
 function pantsCol(t){return cos.pants==='rainbow'?'hsl('+((t*80+120)%360)+' 85% 55%)':PANTSC[cos.pants]||'#2b6cb0';}
 function trailCol(f,t){
   if(cos.trail==='rainbow')return 'hsl('+((t*140+f*220)%360)+' 92% 62%)';

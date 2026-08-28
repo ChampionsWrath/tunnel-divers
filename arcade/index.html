@@ -59,7 +59,10 @@
 <div class="screen" id="scrCustom">
   <div class="panel">
     <h2>🎨 YOUR DIVER</h2>
-    <canvas id="charPrev" width="220" height="220" style="display:block;margin:0 auto 8px;background:radial-gradient(circle at 50% 35%,#2a3450,#141828);border-radius:14px;border:2px solid #2a3450"></canvas>
+    <!-- sticky: the preview stays pinned while the options scroll underneath -->
+    <div style="position:sticky;top:-18px;z-index:5;background:#101624;padding:2px 0 8px;text-align:center;box-shadow:0 10px 14px -8px rgba(0,0,0,0.55)">
+      <canvas id="charPrev" width="220" height="180" style="display:inline-block;background:radial-gradient(circle at 50% 35%,#2a3450,#141828);border-radius:14px;border:2px solid #2a3450"></canvas>
+    </div>
     <div class="secLbl">SKIN TONE</div>
     <input type="range" id="skinIn" class="slider" min="0" max="100" step="1"
       style="width:100%;height:14px;border-radius:8px;appearance:none;-webkit-appearance:none;outline:none;background:linear-gradient(90deg,#ffe7d1,#ffd9b3,#eab98b,#c68d5a,#9c6633,#6e4423)">

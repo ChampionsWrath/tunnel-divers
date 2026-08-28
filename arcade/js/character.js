@@ -29,6 +29,7 @@ function skinShade(v, f) {   // darker skin for shading
    ward = {hair, hat, face, hairCol, faceCol} — hair renders under the hat;
    hairCol/faceCol are any CSS color (the picker stores hsl(...) strings). */
 export const WARDROBE = {
+  body: [['m', 'Male'], ['f', 'Female']],
   hair: [['none', 'None'], ['bowl', 'Bowl Cut'], ['spikes', 'Spikes'], ['curls', 'Curls'],
   ['mohawk', 'Mohawk'], ['pony', 'Ponytail'], ['long', 'Long']],
   hat: [['none', 'None'], ['cap', 'Cap'], ['beanie', 'Beanie'], ['tophat', 'Top Hat'],
@@ -38,12 +39,15 @@ export const WARDROBE = {
   ['bar', 'Handlebar'], ['chops', 'Mutton Chops'], ['soul', 'Soul Patch']],
 };
 export const DEF_HAIR_COL = '#6b4423', DEF_FACE_COL = '#5a3a22';
-// old builds stored hair inside hat — migrate transparently
+const OLD_SHIRTC = { orange: '#ff8c42', blue: '#4d9de0', red: '#e04040', green: '#3a9d5c', purple: '#9d5cd0', black: '#2d3436' };
+// old builds stored hair inside hat, shirts as preset ids — migrate transparently
 export function migrateWard(w) {
   w = w || {};
   const out = {
+    body: w.body === 'f' ? 'f' : 'm',
     hair: w.hair || 'none', hat: w.hat || 'none', face: w.face || 'none',
     hairCol: w.hairCol || DEF_HAIR_COL, faceCol: w.faceCol || DEF_FACE_COL,
+    shirtCol: w.shirtCol || OLD_SHIRTC[w.shirt] || null,   // null = the player's seat color
   };
   if (out.hat === 'hairb') { out.hat = 'none'; out.hair = 'bowl'; out.hairCol = '#6b4423'; }
   if (out.hat === 'hairy') { out.hat = 'none'; out.hair = 'spikes'; out.hairCol = '#f0cd58'; }
@@ -64,6 +68,23 @@ function shade(hex, f) {
     return 'rgb(' + c(n >> 16 & 255) + ',' + c(n >> 8 & 255) + ',' + c(n & 255) + ')';
   } catch (e) { return hex; }
 }
+/* color helpers that accept hex, rgb() AND the picker's hsl() strings */
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+function anyToRgb(c) {
+  if (typeof c !== 'string') return [200, 60, 60];
+  if (c[0] === '#') { const n = parseInt(c.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+  let m = /rgb\((\d+),\s*(\d+),\s*(\d+)/.exec(c); if (m) return [+m[1], +m[2], +m[3]];
+  m = /hsl\((\d+)[, ]+(\d+)%[, ]+(\d+)%\)/.exec(c); if (m) return hslToRgb(+m[1], +m[2], +m[3]);
+  return [200, 60, 60];
+}
+function shadeShirt(c, f) { const [r, gg, b] = anyToRgb(c); return 'rgb(' + (r * f | 0) + ',' + (gg * f | 0) + ',' + (b * f | 0) + ')'; }
+function lightShirt(c, f) { const [r, gg, b] = anyToRgb(c); return 'rgb(' + (r + (255 - r) * f | 0) + ',' + (gg + (255 - gg) * f | 0) + ',' + (b + (255 - b) * f | 0) + ')'; }
 function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r);
@@ -355,6 +376,14 @@ export function drawDiverTop(g, o) {
   g.fillStyle = OUTLINE;
   g.beginPath(); g.arc(-r * 0.27 + ex * 1.4, -r * 0.12 + ey * 1.4, r * 0.1, 0, TAU); g.fill();
   g.beginPath(); g.arc(r * 0.27 + ex * 1.4, -r * 0.12 + ey * 1.4, r * 0.1, 0, TAU); g.fill();
+  if (o.ward && o.ward.body === 'f') {       // lashes, seen from above
+    g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1, r * 0.05);
+    for (const sd of [-1, 1]) for (const a of [-0.3, 0.1, 0.5]) {
+      const bx = sd * r * 0.27 + ex + Math.cos(a) * sd * r * 0.22, by = -r * 0.12 + ey - Math.sin(a + 0.6) * r * 0.22;
+      g.beginPath(); g.moveTo(bx, by);
+      g.lineTo(bx + Math.cos(a) * sd * r * 0.14, by - Math.sin(a + 0.6) * r * 0.14); g.stroke();
+    }
+  }
   // mouth: bigger with speed / override
   const mo = o.mouth != null ? o.mouth : sp;
   g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1.5, r * 0.09);
@@ -529,13 +558,27 @@ export function drawDiverStand(g, o) {
       g.fillStyle = '#ffd23f'; g.fillRect(fx2 - 2, 24.2, 4, 1.6);
     }
   }
-  // torso: vertical gradient in the player's color
+  // torso: the T-SHIRT — custom color (falls back to the player's seat color);
+  // female body tapers at the waist
+  const shirt = ward.shirtCol || o.color;
+  const fem = ward.body === 'f';
   const tg = g.createLinearGradient(0, -8, 0, 12);
-  tg.addColorStop(0, lightHex(o.color, 0.25)); tg.addColorStop(0.6, o.color); tg.addColorStop(1, shade(o.color, 0.78));
+  tg.addColorStop(0, lightShirt(shirt, 0.25)); tg.addColorStop(0.6, shirt); tg.addColorStop(1, shadeShirt(shirt, 0.78));
   g.fillStyle = tg; g.strokeStyle = OUTLINE; g.lineWidth = 3;
-  roundRect(g, -10, -8, 20, 20, 8); g.fill(); g.stroke();
-  // zipper line + collar detail
-  g.strokeStyle = shade(o.color, 0.6); g.lineWidth = 1.4;
+  if (fem) {
+    g.beginPath();
+    g.moveTo(-10, -4); g.quadraticCurveTo(-10, -8, -6, -8);
+    g.lineTo(6, -8); g.quadraticCurveTo(10, -8, 10, -4);
+    g.quadraticCurveTo(7.2, 2, 8.6, 8);       // waist in, hem flares
+    g.quadraticCurveTo(9.4, 12, 5, 12);
+    g.lineTo(-5, 12); g.quadraticCurveTo(-9.4, 12, -8.6, 8);
+    g.quadraticCurveTo(-7.2, 2, -10, -4);
+    g.closePath(); g.fill(); g.stroke();
+  } else {
+    roundRect(g, -10, -8, 20, 20, 8); g.fill(); g.stroke();
+  }
+  // collar seam
+  g.strokeStyle = shadeShirt(shirt, 0.6); g.lineWidth = 1.4;
   g.beginPath(); g.moveTo(0, -6); g.lineTo(0, 9); g.stroke();
   // duck ring: front arc + head OVER the torso
   if (cos.includes('duck')) {
@@ -551,15 +594,15 @@ export function drawDiverStand(g, o) {
     g.fillStyle = '#f5c518';               // tail
     g.beginPath(); g.moveTo(14.5, 3); g.quadraticCurveTo(19, 0, 17.5, 6); g.closePath(); g.fill(); g.stroke();
   }
-  // arms with skin HANDS (cheer = hands up)
-  g.strokeStyle = shade(o.color, 0.8); g.lineWidth = 5.5;
+  // arms with skin HANDS (cheer = hands up) — sleeves match the shirt
+  g.strokeStyle = shadeShirt(shirt, 0.8); g.lineWidth = 5.5;
   const armY = o.mood === 'cheer' ? -14 : 6;
   for (const sd of [-1, 1]) {
     const hx2 = sd * 14, hy2 = armY + Math.sin((o.t || 0) * 2.6) * 1.5 * sd;
     g.beginPath(); g.moveTo(sd * 9, -3); g.lineTo(hx2, hy2); g.stroke();
     g.fillStyle = skinC; g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
     g.beginPath(); g.arc(hx2, hy2 + (o.mood === 'cheer' ? -1 : 1.5), 2.6, 0, TAU); g.fill(); g.stroke();
-    g.strokeStyle = shade(o.color, 0.8); g.lineWidth = 5.5;
+    g.strokeStyle = shadeShirt(shirt, 0.8); g.lineWidth = 5.5;
   }
   // head: skin with soft top-left highlight + chin shading
   const hg = g.createRadialGradient(-3, -20, 2, 0, -17, 11.5);
@@ -582,6 +625,17 @@ export function drawDiverStand(g, o) {
   g.fillStyle = 'rgba(255,255,255,0.85)';
   g.beginPath(); g.arc(-4.8, -19.3, 0.9, 0, TAU); g.fill();
   g.beginPath(); g.arc(3.2, -19.3, 0.9, 0, TAU); g.fill();
+  if (fem) {                                 // lashes at the lens corners
+    g.strokeStyle = OUTLINE; g.lineWidth = 1;
+    for (const [lx, sd] of [[-4, -1], [4, 1]]) {
+      for (const a of [-0.5, 0, 0.5]) {
+        g.beginPath();
+        g.moveTo(lx + sd * 2.4 * Math.cos(a * 0.8 - 0.5), -18.5 - 2.4 * Math.sin(0.6 + a * 0.4));
+        g.lineTo(lx + sd * 3.6 * Math.cos(a * 0.8 - 0.5), -18.5 - 3.5 * Math.sin(0.6 + a * 0.4));
+        g.stroke();
+      }
+    }
+  }
   // cheeks
   g.fillStyle = 'rgba(230,110,90,0.28)';
   g.beginPath(); g.arc(-6, -13.5, 1.8, 0, TAU); g.fill();
@@ -669,8 +723,9 @@ export function drawBatter(g, o) {
   g.beginPath(); g.moveTo(-4, 8); g.lineTo(-13, 26); g.stroke();
   g.beginPath(); g.moveTo(4, 8); g.lineTo(14 + stride, 26); g.stroke();
   g.save(); g.rotate(hipRot);
+  const shirtB = (o.ward && o.ward.shirtCol) || o.color;
   const tg = g.createLinearGradient(0, -10, 0, 12);
-  tg.addColorStop(0, lightHex(o.color, 0.22)); tg.addColorStop(1, shade(o.color, 0.8));
+  tg.addColorStop(0, lightShirt(shirtB, 0.22)); tg.addColorStop(1, shadeShirt(shirtB, 0.8));
   g.fillStyle = tg; g.strokeStyle = OUTLINE; g.lineWidth = 3;
   roundRect(g, -9, -10, 18, 22, 7); g.fill(); g.stroke();
   let batAng, gx, gy;

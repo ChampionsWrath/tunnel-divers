@@ -3,7 +3,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=24';
+import { drawDiverTop, drawDiverStand } from './character.js?v=25';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -103,6 +103,7 @@ class Board {
     this.rq = [];   // remote acts wait here until the local state machine can accept them
     this.mapView = false;
     this.dust = []; this.squashT = 0; this.confetti = []; this._confettiKey = null;
+    this.tut = 0;   // optional how-to cards over the opening; SKIP dismisses (visual only, never blocks sync)
     this.decor = this.buildDecor();
     this.showBanner('🎪 THE CHAOTIC BOARDWALK 🎪', '#ffd23f', 2.2);
   }
@@ -452,6 +453,17 @@ class Board {
     const p = this.cur ? this.cur() : null;
     const auth = this.authority();
     const clicks = this.clicks; // consumed per state below
+    // tutorial cards swallow taps while open — the game itself keeps running
+    // underneath (remote acts still mirror; your own turn just waits for you)
+    if (this.tut != null) {
+      const hit = this.hitButton(clicks);
+      if (hit) {
+        this.ctx.audio.sfx.ui();
+        if (hit.id === 'tutN') { this.tut++; if (this.tut >= 4) this.tut = null; }
+        else if (hit.id === 'tutS') this.tut = null;
+      }
+      clicks.length = 0;
+    }
     const inp = this.myTurn() ? this.ctx.input(p.slot, rdt) : { act: false };
     // overlays (shop/mascot/piñata) pause whatever else is happening — including
     // mid-movement shop stops — and must resolve before the walk continues
@@ -888,6 +900,55 @@ class Board {
       g.fillRect(-c.s / 2, -c.s / 3, c.s, c.s * 0.66);
       g.restore();
     }
+    if (this.tut != null) this.drawTutorial(g, W, H);
+  }
+  drawTutorial(g, W, H) {
+    const CARDS = [
+      ['🎪 WELCOME TO THE BOARDWALK!', [
+        'Richest diver after ' + this.maxTurns + ' turns WINS.',
+        'Score = coins 🪙 + cosmetics ⭐',
+      ]],
+      ['🎲 ON YOUR TURN', [
+        'ROLL and walk the boardwalk.',
+        '🔵 +3 coins · 🔴 −3 coins',
+        '🛒 shop: buy item cards',
+        '🪅 piñata: win cosmetics · 🎭 gamble',
+      ]],
+      ['🕹️ MINIGAME EVERY ROUND', [
+        'After everyone moves, a minigame!',
+        'Placements pay coins. You get a',
+        'practice arena first — then 3·2·1.',
+      ]],
+      ['😈 BE RUDE', [
+        'Land on a rival to SQUASH them',
+        'and STEAL a cosmetic. Item cards',
+        'trip, stumble, and shield. Have fun!',
+      ]],
+    ];
+    const [title, lines] = CARDS[this.tut];
+    g.fillStyle = 'rgba(6,7,13,0.74)'; g.fillRect(0, 0, W, H);
+    const cw = Math.min(W * 0.88, 360), lh = 24;
+    const chh = 96 + lines.length * lh + 54;
+    const cx2 = (W - cw) / 2, cy2 = (H - chh) / 2 - H * 0.04;
+    g.fillStyle = '#101624'; g.strokeStyle = '#ffd23f'; g.lineWidth = 3;
+    const r = 16;
+    g.beginPath();
+    g.moveTo(cx2 + r, cy2); g.arcTo(cx2 + cw, cy2, cx2 + cw, cy2 + chh, r);
+    g.arcTo(cx2 + cw, cy2 + chh, cx2, cy2 + chh, r); g.arcTo(cx2, cy2 + chh, cx2, cy2, r);
+    g.arcTo(cx2, cy2, cx2 + cw, cy2, r); g.closePath(); g.fill(); g.stroke();
+    g.textAlign = 'center';
+    g.font = '900 ' + Math.min(21, cw * 0.058) + 'px system-ui';
+    g.fillStyle = '#ffd23f'; g.fillText(title, W / 2, cy2 + 36);
+    g.font = '700 15px system-ui'; g.fillStyle = '#ffeccf';
+    lines.forEach((ln, i) => g.fillText(ln, W / 2, cy2 + 68 + i * lh));
+    // progress dots
+    for (let d = 0; d < CARDS.length; d++) {
+      g.fillStyle = d === this.tut ? '#ffd23f' : '#3a4562';
+      g.beginPath(); g.arc(W / 2 - 27 + d * 18, cy2 + chh - 66, 4.5, 0, TAU); g.fill();
+    }
+    const last = this.tut === CARDS.length - 1;
+    this.addButton(g, 'tutN', last ? "LET'S GO!" : 'NEXT ▶', cx2 + cw / 2 - 74, cy2 + chh - 52, 148, 40);
+    if (!last) this.addButton(g, 'tutS', 'SKIP', cx2 + cw - 74, cy2 + chh + 12, 66, 32, false);
   }
   drawDecor(g, dc, px, py, Z) {
     const s = Z * 0.9 * dc.s;
