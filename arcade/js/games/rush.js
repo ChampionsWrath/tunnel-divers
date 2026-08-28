@@ -2,7 +2,7 @@
 // Traffic comes AT you; swipe to change lanes, survive the longest. Obstacles
 // ramp up and sometimes block two lanes at once. Your hands turn the wheel.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { skinTone } from '../character.js?v=21';
+import { skinTone } from '../character.js?v=22';
 
 const LANES = 3, MAX_T = 120;                 // nobody outruns rush hour forever
 const OUTLINE = '#14100a';

@@ -1,23 +1,23 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=21';
-import * as audio from './audio.js?v=21';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=21';
-import { Net, makeRoomCode } from './net.js?v=21';
-import tunnel from './games/tunnel.js?v=21';
-import stack from './games/stack.js?v=21';
-import crown from './games/crown.js?v=21';
-import brain from './games/brain.js?v=21';
-import blast from './games/blast.js?v=21';
-import food from './games/food.js?v=21';
-import homerun from './games/homerun.js?v=21';
-import trivia from './games/trivia.js?v=21';
-import ghost from './games/ghost.js?v=21';
-import greed from './games/greed.js?v=21';
-import lava from './games/lava.js?v=21';
-import rush from './games/rush.js?v=21';
-import { createBoard } from './board.js?v=21';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=22';
+import * as audio from './audio.js?v=22';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=22';
+import { Net, makeRoomCode } from './net.js?v=22';
+import tunnel from './games/tunnel.js?v=22';
+import stack from './games/stack.js?v=22';
+import crown from './games/crown.js?v=22';
+import brain from './games/brain.js?v=22';
+import blast from './games/blast.js?v=22';
+import food from './games/food.js?v=22';
+import homerun from './games/homerun.js?v=22';
+import trivia from './games/trivia.js?v=22';
+import ghost from './games/ghost.js?v=22';
+import greed from './games/greed.js?v=22';
+import lava from './games/lava.js?v=22';
+import rush from './games/rush.js?v=22';
+import { createBoard } from './board.js?v=22';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -36,7 +36,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 21;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 22;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };

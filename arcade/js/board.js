@@ -3,8 +3,15 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=21';
+import { drawDiverTop, drawDiverStand } from './character.js?v=22';
 
+function lightCol(hex, f) {   // mix toward white by f
+  try {
+    const n = parseInt(hex.slice(1), 16);
+    const c = v => Math.round(v + (255 - v) * f);
+    return 'rgb(' + c(n >> 16 & 255) + ',' + c(n >> 8 & 255) + ',' + c(n & 255) + ')';
+  } catch (e) { return hex; }
+}
 function shadeCol(hex, f) {
   try {
     const n = parseInt(hex.slice(1), 16);
@@ -63,6 +70,7 @@ function buildMap() {
   return nodes;
 }
 const HP = Math.PI / 2;
+const frac = v => { const s = Math.sin(v) * 43758.5453; return s - Math.floor(s); };
 const NODE_STYLE = {
   start: ['#ffd23f', '🏁'], blue: ['#4d9de0', '+3'], red: ['#e04040', '-3'], fork: ['#93a0bd', '⑂'],
   shop: ['#a1e887', '🛒'], pinata: ['#e08bd0', '🪅'], mascot: ['#ffb84d', '🎭'],
@@ -94,6 +102,7 @@ class Board {
     this.isNetHost = !ctx.net || ctx.net.isHost;
     this.rq = [];   // remote acts wait here until the local state machine can accept them
     this.mapView = false;
+    this.dust = []; this.squashT = 0; this.confetti = []; this._confettiKey = null;
     this.decor = this.buildDecor();
     this.showBanner('🎪 THE CHAOTIC BOARDWALK 🎪', '#ffd23f', 2.2);
   }
@@ -417,6 +426,26 @@ class Board {
     this.camX += (foc.ax - this.camX) * Math.min(1, rdt * 4);
     this.camY += (foc.ay - this.camY) * Math.min(1, rdt * 4);
     for (let i = this.pops.length; i--;) { this.pops[i].t += rdt; if (this.pops[i].t > this.pops[i].dur) this.pops.splice(i, 1); }
+    this.squashT = Math.max(0, this.squashT - rdt);
+    for (let i = this.dust.length; i--;) { this.dust[i].t += rdt; if (this.dust[i].t > this.dust[i].dur) this.dust.splice(i, 1); }
+    for (let i = this.confetti.length; i--;) {
+      const c = this.confetti[i];
+      c.t += rdt; c.y += c.vy * rdt; c.x += Math.sin(c.t * c.wig + c.ph) * 26 * rdt; c.rot += c.vr * rdt;
+      if (c.y > this.ctx.dim.H + 20) this.confetti.splice(i, 1);
+    }
+    // reward = celebration: rain confetti once per reward phase
+    if (this.state === 'reward') {
+      const key = this.turn + ':' + this.playerIdx;
+      if (this._confettiKey !== key) {
+        this._confettiKey = key;
+        const { W } = this.ctx.dim;
+        for (let k = 0; k < 70; k++) this.confetti.push({
+          x: frac(k * 12.9) * W, y: -20 - frac(k * 5.3) * 160, vy: 90 + frac(k * 31.7) * 130,
+          rot: frac(k * 3.1) * TAU, vr: (frac(k * 8.3) - 0.5) * 9, wig: 2 + frac(k * 4.7) * 3, ph: k, t: 0,
+          col: ['#ffd23f', '#e04040', '#4d9de0', '#7dff6a', '#e08bd0'][k % 5], s: 3 + frac(k * 6.1) * 4,
+        });
+      }
+    }
     if (this.overlay) this.overlay.t += rdt;
     this.ctx.audio.setMusicIntensity(0.3 + (this.state === 'dicing' || this.state === 'stepping' ? 0.15 : 0));
     const p = this.cur ? this.cur() : null;
@@ -486,7 +515,14 @@ class Board {
         const f = Math.min(1, this.moveT / 0.34);
         p2.ax = lerp(this.stepFrom.x, tn.x, f);
         p2.ay = lerp(this.stepFrom.y, tn.y, f) - Math.sin(f * Math.PI) * 3;
-        if (f >= 1) { p2.ax = tn.x; p2.ay = tn.y; this.afterStep(); }
+        if (f >= 1) {
+          p2.ax = tn.x; p2.ay = tn.y;
+          // goofy landing: squash-and-stretch + a puff of boardwalk dust
+          this.squashT = 0.2;
+          for (let k = 0; k < 5; k++)
+            this.dust.push({ x: tn.x, y: tn.y, ox: (k / 4 - 0.5) * 2, t: 0, dur: 0.4 + frac(k * 3.7) * 0.2, s: 0.7 + frac(k * 9.1) * 0.6 });
+          this.afterStep();
+        }
         break;
       }
       case 'action': break;   // node effects run instantly or via overlays
@@ -591,32 +627,109 @@ class Board {
     const [, horizonY] = this.proj(0, -14);
     const skyBot = Math.max(40, Math.min(H, horizonY));
     const sky = g.createLinearGradient(0, 0, 0, skyBot);
-    sky.addColorStop(0, '#2a1a3e'); sky.addColorStop(0.6, '#8a3a5e'); sky.addColorStop(1, '#d4744a');
+    sky.addColorStop(0, '#1c1234'); sky.addColorStop(0.35, '#552a56');
+    sky.addColorStop(0.7, '#a84462'); sky.addColorStop(1, '#f08a52');
     g.fillStyle = sky; g.fillRect(0, 0, W, skyBot);
-    // sun on the horizon
-    const sunX = W * 0.7 - (this.camX - 50) * Z * 0.12;
-    g.fillStyle = 'rgba(255,210,63,0.9)';
-    g.beginPath(); g.arc(sunX, skyBot - Z * 1.2, Z * 2.4, 0, TAU); g.fill();
-    // ocean strip
+    // early stars up top
+    for (let i = 0; i < 14; i++) {
+      const fr = frac(i * 91.7), f3 = frac(i * 37.3);
+      const tw2 = 0.35 + 0.65 * Math.abs(Math.sin(this.tt * (0.7 + f3) + i));
+      g.fillStyle = 'rgba(255,240,220,' + (0.5 * tw2 * Math.max(0, 1 - f3 * 1.7)).toFixed(2) + ')';
+      g.fillRect(fr * W, f3 * skyBot * 0.7, 2, 2);
+    }
+    // sun: layered glow sitting on the horizon
+    const sunX = W * 0.7 - (this.camX - 50) * Z * 0.12, sunY = skyBot - Z * 1.2;
+    for (const [rr3, aa] of [[Z * 6.5, 0.12], [Z * 4.2, 0.2], [Z * 2.6, 0.55]]) {
+      g.fillStyle = 'rgba(255,205,110,' + aa + ')';
+      g.beginPath(); g.arc(sunX, sunY, rr3, 0, TAU); g.fill();
+    }
+    g.fillStyle = '#ffe08a';
+    g.beginPath(); g.arc(sunX, sunY, Z * 2.2, 0, TAU); g.fill();
+    // drifting clouds (parallax, wrap)
+    for (let i = 0; i < 4; i++) {
+      const cy2 = skyBot * (0.22 + frac(i * 53.1) * 0.5);
+      const cx2 = ((frac(i * 17.7) * (W + 260) + this.tt * (4 + i * 2) - this.camX * Z * 0.05) % (W + 260)) - 130;
+      const cs = Z * (1.1 + frac(i * 7.9));
+      g.fillStyle = 'rgba(255,190,170,' + (0.18 + 0.08 * (i % 2)) + ')';
+      g.beginPath();
+      g.ellipse(cx2, cy2, cs * 3, cs * 0.9, 0, 0, TAU);
+      g.ellipse(cx2 - cs * 1.8, cy2 + cs * 0.3, cs * 1.7, cs * 0.65, 0, 0, TAU);
+      g.ellipse(cx2 + cs * 2, cy2 + cs * 0.25, cs * 1.9, cs * 0.7, 0, 0, TAU);
+      g.fill();
+    }
+    // distant ferris wheel silhouette, turning slowly on the horizon
+    const fwX = W * 0.22 - (this.camX - 50) * Z * 0.15, fwR = Z * 4.2, fwY = skyBot - fwR - Z * 0.4;
+    g.strokeStyle = 'rgba(40,22,52,0.85)'; g.lineWidth = Math.max(1.5, Z * 0.14);
+    g.beginPath(); g.arc(fwX, fwY, fwR, 0, TAU); g.stroke();
+    g.beginPath(); g.moveTo(fwX - fwR * 0.7, skyBot); g.lineTo(fwX, fwY); g.lineTo(fwX + fwR * 0.7, skyBot); g.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = this.tt * 0.12 + i / 8 * TAU;
+      const gx2 = fwX + Math.cos(a) * fwR, gy2 = fwY + Math.sin(a) * fwR;
+      g.beginPath(); g.moveTo(fwX, fwY); g.lineTo(gx2, gy2); g.stroke();
+      g.fillStyle = ['#ffd23f', '#e04040', '#4d9de0', '#e08bd0'][i % 4];
+      g.beginPath(); g.arc(gx2, gy2 + Z * 0.3, Math.max(1.5, Z * 0.28), 0, TAU); g.fill();
+    }
+    // seagulls
+    g.strokeStyle = 'rgba(30,20,40,0.7)'; g.lineWidth = Math.max(1.2, Z * 0.1); g.lineCap = 'round';
+    for (let i = 0; i < 2; i++) {
+      const gx2 = ((this.tt * (14 + i * 6) + i * 300) % (W + 120)) - 60;
+      const gy2 = skyBot * (0.3 + i * 0.22) + Math.sin(this.tt * 2 + i * 3) * 6;
+      const fl = Math.sin(this.tt * 7 + i * 2) * Z * 0.35;
+      g.beginPath(); g.moveTo(gx2 - Z * 0.55, gy2 + fl); g.quadraticCurveTo(gx2, gy2 - Z * 0.25, gx2 + Z * 0.02, gy2);
+      g.quadraticCurveTo(gx2 + Z * 0.06, gy2 - Z * 0.25, gx2 + Z * 0.6, gy2 + fl); g.stroke();
+    }
+    // ocean strip: deep gradient + animated swells + sun glitter + foam shoreline
     const [, oceanBot] = this.proj(0, -8);
     const og = g.createLinearGradient(0, skyBot, 0, Math.max(skyBot + 1, oceanBot));
-    og.addColorStop(0, '#d4744a'); og.addColorStop(0.3, '#4d6fae'); og.addColorStop(1, '#1d3a6e');
+    og.addColorStop(0, '#e0825a'); og.addColorStop(0.25, '#5a7cb8'); og.addColorStop(1, '#1d3a6e');
     g.fillStyle = og; g.fillRect(0, skyBot, W, Math.max(0, oceanBot - skyBot));
-    g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = Math.max(1, Z * 0.1);
-    for (let i = 0; i < 4; i++) {
-      const wy = -13 + i * 1.3, [, py2] = this.proj(0, wy);
-      if (py2 > skyBot && py2 < oceanBot) { g.beginPath(); g.moveTo(0, py2); g.lineTo(W, py2); g.stroke(); }
+    g.strokeStyle = 'rgba(255,255,255,0.22)';
+    for (let i = 0; i < 5; i++) {
+      const wy = -13.4 + i * 1.25, [, py2] = this.proj(0, wy);
+      if (py2 <= skyBot || py2 >= oceanBot) continue;
+      g.lineWidth = Math.max(1, Z * (0.06 + i * 0.02));
+      g.beginPath();
+      for (let x = 0; x <= W; x += 14)
+        g[x ? 'lineTo' : 'moveTo'](x, py2 + Math.sin(x * 0.05 + this.tt * (1.2 + i * 0.3) + i * 9) * Z * 0.14);
+      g.stroke();
     }
+    // sun glitter path on the water
+    for (let i = 0; i < 12; i++) {
+      const fy = frac(i * 61.3), py2 = lerp(skyBot + 2, oceanBot - 2, fy);
+      const px2 = sunX + (frac(i * 23.9) - 0.5) * Z * (2 + fy * 5);
+      g.fillStyle = 'rgba(255,220,140,' + (0.5 * Math.abs(Math.sin(this.tt * 2.4 + i * 2.4))).toFixed(2) + ')';
+      g.fillRect(px2, py2, Math.max(2, Z * 0.5), Math.max(1, Z * 0.08));
+    }
+    // foam where the surf meets the boardwalk
+    g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = Math.max(1.6, Z * 0.16);
+    g.beginPath();
+    for (let x = 0; x <= W; x += 10)
+      g[x ? 'lineTo' : 'moveTo'](x, oceanBot + Math.sin(x * 0.07 + this.tt * 1.6) * Z * 0.18);
+    g.stroke();
     // THE GROUND: sandy fairground from the shore down, wooden deck under the park
     const gg = g.createLinearGradient(0, oceanBot, 0, H);
-    gg.addColorStop(0, '#e0b87e'); gg.addColorStop(0.35, '#c99a5e'); gg.addColorStop(1, '#8a6238');
+    gg.addColorStop(0, '#e8c188'); gg.addColorStop(0.35, '#cd9f62'); gg.addColorStop(1, '#8a6238');
     g.fillStyle = gg; g.fillRect(0, Math.max(0, oceanBot), W, H);
-    // deck plank seams
-    g.strokeStyle = 'rgba(90,64,40,0.35)'; g.lineWidth = Math.max(1.2, Z * 0.1);
-    for (let wy = Math.floor((this.camY - 50) / 3.2) * 3.2; wy < this.camY + 50; wy += 3.2) {
+    // deck planks: long seams + alternating tone bands + staggered joints + nails
+    for (let wy = Math.floor((this.camY - 50) / 3.2) * 3.2, row = 0; wy < this.camY + 50; wy += 3.2, row++) {
       const [, py2] = this.proj(0, wy);
-      if (py2 < oceanBot || py2 > H + 10) continue;
+      const [, py3] = this.proj(0, wy + 3.2);
+      if (py3 < oceanBot || py2 > H + 10) continue;
+      if ((Math.floor(wy / 3.2) % 2 + 2) % 2 === 0) {   // subtle alternating plank tone
+        g.fillStyle = 'rgba(90,60,30,0.08)';
+        g.fillRect(0, Math.max(py2, oceanBot), W, Math.max(0, Math.min(py3, H) - Math.max(py2, oceanBot)));
+      }
+      g.strokeStyle = 'rgba(90,64,40,0.4)'; g.lineWidth = Math.max(1.2, Z * 0.1);
       g.beginPath(); g.moveTo(0, py2); g.lineTo(W, py2); g.stroke();
+      // staggered vertical joints with nail heads
+      const off = ((Math.floor(wy / 3.2) % 2 + 2) % 2) * 5.5;
+      for (let wx = Math.floor((this.camX - 60) / 11) * 11 + off; wx < this.camX + 60; wx += 11) {
+        const [jx] = this.proj(wx, wy);
+        if (jx < -5 || jx > W + 5 || py2 < oceanBot) continue;
+        g.beginPath(); g.moveTo(jx, py2); g.lineTo(jx, Math.min(py3, H)); g.stroke();
+        g.fillStyle = 'rgba(60,42,26,0.5)';
+        g.beginPath(); g.arc(jx + Z * 0.35, py2 + Z * 0.5, Math.max(1, Z * 0.07), 0, TAU); g.fill();
+      }
     }
     // scattered sand speckles + confetti litter (deterministic)
     for (let i = 0; i < 40; i++) {
@@ -629,29 +742,55 @@ class Board {
     }
     // the WALKWAY: a wide continuous path ribbon the tiles sit on
     g.lineCap = 'round'; g.lineJoin = 'round';
-    for (const pass of [[Z * 8.2, '#6b4a2b'], [Z * 7.2, '#8a6238'], [Z * 6.6, '#a3784a']]) {
+    const edges = [];
+    for (const n of this.map) for (const nx of n.next) {
+      const m2 = this.map[nx];
+      const [ax2, ay2] = this.proj(n.x, n.y), [bx2, by2] = this.proj(m2.x, m2.y);
+      if (Math.max(ax2, bx2) < -120 || Math.min(ax2, bx2) > W + 120) continue;
+      edges.push([ax2, ay2, bx2, by2]);
+    }
+    for (const pass of [[Z * 8.6, '#4c3420'], [Z * 7.9, '#6b4a2b'], [Z * 7.1, '#8a6238'], [Z * 6.4, '#a3784a']]) {
       g.strokeStyle = pass[1]; g.lineWidth = pass[0];
-      for (const n of this.map) for (const nx of n.next) {
-        const m2 = this.map[nx];
-        const [ax2, ay2] = this.proj(n.x, n.y), [bx2, by2] = this.proj(m2.x, m2.y);
-        if (Math.max(ax2, bx2) < -120 || Math.min(ax2, bx2) > W + 120) continue;
+      for (const [ax2, ay2, bx2, by2] of edges) {
         g.beginPath(); g.moveTo(ax2, ay2); g.lineTo(bx2, by2); g.stroke();
       }
     }
-    // string lights draped along the top of the loop
-    g.lineWidth = Math.max(1.2, Z * 0.09);
+    // Mario-Party-style guide dots down the middle of the path
+    g.fillStyle = 'rgba(255,236,190,0.8)';
+    for (const [ax2, ay2, bx2, by2] of edges) {
+      for (const f of [0.33, 0.66]) {
+        g.beginPath(); g.arc(lerp(ax2, bx2, f), lerp(ay2, by2, f), Math.max(1.6, Z * 0.28), 0, TAU); g.fill();
+      }
+    }
+    // string lights draped along the top of the loop — with warm glow halos
     for (let seg = 0; seg < 4; seg++) {
       const x0 = 8 + seg * 24, x1 = x0 + 24;
       const [ax2, ay2] = this.proj(x0, -2), [bx2, by2] = this.proj(x1, -2);
       if (Math.max(ax2, bx2) < -60 || Math.min(ax2, bx2) > W + 60) continue;
-      g.strokeStyle = 'rgba(20,16,10,0.6)';
+      g.strokeStyle = 'rgba(20,16,10,0.6)'; g.lineWidth = Math.max(1.2, Z * 0.09);
       g.beginPath(); g.moveTo(ax2, ay2); g.quadraticCurveTo((ax2 + bx2) / 2, ay2 + Z * 2.2, bx2, by2); g.stroke();
       for (let b = 1; b < 6; b++) {
         const f = b / 6, lx = lerp(ax2, bx2, f), ly = ay2 + Math.sin(f * Math.PI) * Z * 1.6;
-        g.fillStyle = ['#ffd23f', '#e04040', '#4d9de0', '#7dff6a', '#e08bd0'][b % 5];
+        const col = ['#ffd23f', '#e04040', '#4d9de0', '#7dff6a', '#e08bd0'][b % 5];
+        const tw2 = 0.75 + 0.25 * Math.sin(this.tt * 3 + seg * 5 + b * 2);
+        g.globalAlpha = 0.35 * tw2;
+        g.fillStyle = col;
+        g.beginPath(); g.arc(lx, ly, Math.max(3, Z * 0.6), 0, TAU); g.fill();
+        g.globalAlpha = 1;
         g.beginPath(); g.arc(lx, ly, Math.max(1.6, Z * 0.24), 0, TAU); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.7)';
+        g.beginPath(); g.arc(lx - Z * 0.06, ly - Z * 0.06, Math.max(0.7, Z * 0.08), 0, TAU); g.fill();
       }
     }
+    // landing dust poofs (goofy physics!)
+    for (const d of this.dust) {
+      const [dx2, dy2] = this.proj(d.x, d.y);
+      const f = d.t / d.dur;
+      g.globalAlpha = (1 - f) * 0.55;
+      g.fillStyle = '#e8d5b0';
+      g.beginPath(); g.arc(dx2 + d.ox * Z * (0.5 + f * 1.6), dy2 - f * Z * 1.1, Z * (0.35 + f * 0.75) * d.s, 0, TAU); g.fill();
+    }
+    g.globalAlpha = 1;
     // depth-sorted world: decor + chunky tiles + standing divers
     const items = [];
     for (const dc of this.decor) {
@@ -680,16 +819,41 @@ class Board {
       const p = this.cur();
       const [px2, py2] = this.proj(p.ax, p.ay);
       const ds = Z * 3, dy2 = py2 - Z * 11 + Math.sin(this.tt * 3) * Z * 0.3;
+      const settled = this.dice && this.dice.settled;
       const shown = this.state === 'dicing' && this.dice
-        ? (this.dice.settled ? this.dice.v : 1 + Math.floor(this.tt * 17 % 6))
-        : '?';
-      g.save(); g.translate(px2, dy2);
-      if (!(this.dice && this.dice.settled)) g.rotate(Math.sin(this.tt * 14) * 0.25);
-      g.fillStyle = '#f2ece2'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
-      g.fillRect(-ds / 2, -ds / 2, ds, ds); g.strokeRect(-ds / 2, -ds / 2, ds, ds);
-      g.fillStyle = '#14100a'; g.font = '900 ' + Math.round(ds * 0.62) + 'px system-ui';
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(shown, 0, 1); g.textBaseline = 'alphabetic';
+        ? (settled ? this.dice.v : 1 + Math.floor(this.tt * 17 % 6)) : 0;
+      const popIn = settled ? 1 + Math.max(0, 0.35 - (this.dice.t - 1.0)) : 1;   // lands with a pop
+      g.save(); g.translate(px2, dy2); g.scale(popIn, popIn);
+      if (!settled) g.rotate(Math.sin(this.tt * 14) * 0.3);
+      // pseudo-3D block: top + right faces behind the front face
+      const d3 = ds * 0.28;
+      g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+      g.fillStyle = '#d9d2c4';   // top face
+      g.beginPath(); g.moveTo(-ds / 2, -ds / 2); g.lineTo(-ds / 2 + d3, -ds / 2 - d3);
+      g.lineTo(ds / 2 + d3, -ds / 2 - d3); g.lineTo(ds / 2, -ds / 2); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#b8b0a0';   // right face
+      g.beginPath(); g.moveTo(ds / 2, -ds / 2); g.lineTo(ds / 2 + d3, -ds / 2 - d3);
+      g.lineTo(ds / 2 + d3, ds / 2 - d3); g.lineTo(ds / 2, ds / 2); g.closePath(); g.fill(); g.stroke();
+      // front face
+      const fg = g.createLinearGradient(-ds / 2, -ds / 2, ds / 2, ds / 2);
+      fg.addColorStop(0, '#fffdf6'); fg.addColorStop(1, '#e8e0d0');
+      g.fillStyle = fg;
+      const dr = ds * 0.18;
+      g.beginPath();
+      g.moveTo(-ds / 2 + dr, -ds / 2); g.arcTo(ds / 2, -ds / 2, ds / 2, ds / 2, dr);
+      g.arcTo(ds / 2, ds / 2, -ds / 2, ds / 2, dr); g.arcTo(-ds / 2, ds / 2, -ds / 2, -ds / 2, dr);
+      g.arcTo(-ds / 2, -ds / 2, ds / 2, -ds / 2, dr); g.closePath(); g.fill(); g.stroke();
+      if (shown) {                       // classic pips
+        g.fillStyle = '#c0392b';
+        const pp = ds * 0.24, pipR = ds * 0.09;
+        const P = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] };
+        for (const [qx, qy] of P[shown]) { g.beginPath(); g.arc(qx * pp, qy * pp, pipR, 0, TAU); g.fill(); }
+      } else {                           // pre-roll: glowing '?'
+        g.fillStyle = '#c0392b'; g.font = '900 ' + Math.round(ds * 0.62) + 'px system-ui';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.globalAlpha = 0.7 + 0.3 * Math.sin(this.tt * 5);
+        g.fillText('?', 0, 1); g.globalAlpha = 1; g.textBaseline = 'alphabetic';
+      }
       g.restore();
     }
     // ---------- HUD ----------
@@ -716,10 +880,21 @@ class Board {
       g.fillStyle = q.col; g.fillText(q.txt, W / 2, H * 0.3 - q.t * 40);
     }
     g.globalAlpha = 1;
+    // celebration confetti (reward phase) rains over everything
+    for (const c of this.confetti) {
+      g.save(); g.translate(c.x, c.y); g.rotate(c.rot);
+      g.fillStyle = c.col;
+      g.fillRect(-c.s / 2, -c.s / 3, c.s, c.s * 0.66);
+      g.restore();
+    }
   }
   drawDecor(g, dc, px, py, Z) {
     const s = Z * 0.9 * dc.s;
     g.lineCap = 'round';
+    // grounding shadow so props sit ON the boardwalk instead of floating
+    const shW = { tent: 3.4, carousel: 3.4, popcorn: 2.3, cotton: 2.3, balloons: 0.9, lamp: 0.7 }[dc.kind] || 1.5;
+    g.fillStyle = 'rgba(30,18,8,0.28)';
+    g.beginPath(); g.ellipse(px, py + s * 0.35, s * shW, s * shW * 0.3, 0, 0, TAU); g.fill();
     if (dc.kind === 'tent') {
       // striped carnival tent
       g.fillStyle = '#c94a4a'; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
@@ -784,29 +959,58 @@ class Board {
   drawTile(g, n, px, py, Z) {
     const [col, icon] = NODE_STYLE[n.type];
     const isBranchOpt = this.state === 'branch' && this.branchOpts.includes(n.id);
+    const cur = this.cur();
+    const isHere = cur && cur.node === n.id && this.state !== 'splash';
     const tw = Z * (isBranchOpt ? 7.4 + Math.sin(this.tt * 6) * 0.3 : 6.6);
-    const th = tw * 0.58, dpt = Z * 1.25, r = tw * 0.16;
+    const th = tw * 0.58, dpt = Z * 1.25, r = tw * 0.2;
     const rr2 = (x, y, w, h) => {
       g.beginPath();
       g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r);
       g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r);
       g.arcTo(x, y, x + w, y, r); g.closePath();
     };
-    // extruded side
-    g.fillStyle = shadeCol(col, 0.5);
-    rr2(px - tw / 2, py - th / 2 + dpt, tw, th); g.fill();
-    // top face
-    g.fillStyle = col; g.strokeStyle = isBranchOpt ? '#ffd23f' : '#14100a'; g.lineWidth = isBranchOpt ? 4 : 3;
+    // ambient occlusion on the boardwalk
+    g.fillStyle = 'rgba(30,18,8,0.3)';
+    g.beginPath(); g.ellipse(px, py + dpt + th * 0.32, tw * 0.56, th * 0.42, 0, 0, TAU); g.fill();
+    // extruded side: gradient so the block reads as candy-thick
+    const sg = g.createLinearGradient(px, py + th / 2, px, py + th / 2 + dpt);
+    sg.addColorStop(0, shadeCol(col, 0.62)); sg.addColorStop(1, shadeCol(col, 0.38));
+    g.fillStyle = sg; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+    rr2(px - tw / 2, py - th / 2 + dpt, tw, th); g.fill(); g.stroke();
+    // top face: sunset-lit gradient
+    const tg = g.createLinearGradient(px - tw / 2, py - th / 2, px + tw / 3, py + th / 2);
+    tg.addColorStop(0, lightCol(col, 0.28)); tg.addColorStop(0.55, col); tg.addColorStop(1, shadeCol(col, 0.82));
+    g.fillStyle = tg;
+    g.strokeStyle = isBranchOpt ? '#ffd23f' : '#14100a'; g.lineWidth = isBranchOpt ? 4 : 3;
     rr2(px - tw / 2, py - th / 2, tw, th); g.fill(); g.stroke();
-    // soft top sheen
-    g.fillStyle = 'rgba(255,255,255,0.14)';
-    rr2(px - tw / 2 + 3, py - th / 2 + 3, tw - 6, th * 0.34); g.fill();
+    // active-player halo pulse under the walker's tile
+    if (isHere && !isBranchOpt) {
+      g.globalAlpha = 0.35 + 0.2 * Math.sin(this.tt * 5);
+      g.strokeStyle = '#fff'; g.lineWidth = 2.5;
+      rr2(px - tw / 2 + 3, py - th / 2 + 3, tw - 6, th - 6); g.stroke();
+      g.globalAlpha = 1;
+    }
+    // white icon plate — the Mario Party read
+    const pw2 = tw * 0.52, ph2 = th * 0.66, pr = ph2 * 0.4;
+    g.fillStyle = 'rgba(255,252,244,0.94)'; g.strokeStyle = shadeCol(col, 0.6); g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(px - pw2 / 2 + pr, py - ph2 / 2);
+    g.arcTo(px + pw2 / 2, py - ph2 / 2, px + pw2 / 2, py + ph2 / 2, pr);
+    g.arcTo(px + pw2 / 2, py + ph2 / 2, px - pw2 / 2, py + ph2 / 2, pr);
+    g.arcTo(px - pw2 / 2, py + ph2 / 2, px - pw2 / 2, py - ph2 / 2, pr);
+    g.arcTo(px - pw2 / 2, py - ph2 / 2, px + pw2 / 2, py - ph2 / 2, pr); g.closePath();
+    g.fill(); g.stroke();
     // icon
-    g.fillStyle = '#14100a';
-    g.font = '900 ' + Math.round(Z * (icon.length > 1 ? 1.7 : 2.2)) + 'px system-ui';
+    g.fillStyle = icon === '+3' ? '#1d6fb8' : icon === '-3' ? '#b82424' : '#14100a';
+    g.font = '900 ' + Math.round(Z * (icon.length > 1 ? 1.55 : 2)) + 'px system-ui';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(icon, px, py + 1);
     g.textBaseline = 'alphabetic';
+    // glossy specular sweep across the top edge
+    g.globalAlpha = 0.22;
+    g.fillStyle = '#fff';
+    rr2(px - tw / 2 + 3, py - th / 2 + 2.5, tw - 6, th * 0.26); g.fill();
+    g.globalAlpha = 1;
   }
   drawStanding(g, p, i, px, py, Z) {
     // shared tiles: fan the divers out a little
@@ -815,14 +1019,27 @@ class Board {
     const ox2 = mates.length > 1 ? (k - (mates.length - 1) / 2) * Z * 2.4 : 0;
     const active = this.playerIdx === i && this.state !== 'splash' && this.state !== 'end';
     const sc = Z * 0.105 * (active ? 1.18 : 1);
-    // ground shadow
-    g.fillStyle = 'rgba(0,0,0,0.4)';
-    g.beginPath(); g.ellipse(px + ox2, py + Z * 0.4, Z * 1.7 * (active ? 1.15 : 1), Z * 0.55, 0, 0, TAU); g.fill();
+    const isMover = active && p === this.cur();
+    // mid-hop: shadow shrinks under the airborne diver (goofy physics sells the jump)
+    const hopping = isMover && this.state === 'stepping';
+    const hopF = hopping ? Math.sin(Math.min(1, this.moveT / 0.34) * Math.PI) : 0;
+    g.fillStyle = 'rgba(0,0,0,' + (0.4 - hopF * 0.22).toFixed(2) + ')';
+    const shw = Z * 1.7 * (active ? 1.15 : 1) * (1 - hopF * 0.45);
+    g.beginPath(); g.ellipse(px + ox2, py + Z * 0.4 + (hopping ? hopF * Z * 1.85 : 0), shw, shw * 0.32, 0, 0, TAU); g.fill();
+    // landing squash-and-stretch
+    const sq = isMover && this.squashT > 0 ? Math.sin((this.squashT / 0.2) * Math.PI) * 0.28 : 0;
+    g.save();
+    if (sq > 0) {
+      g.translate(px + ox2, py + Z * 0.5);
+      g.scale(1 + sq, 1 - sq * 0.8);
+      g.translate(-(px + ox2), -(py + Z * 0.5));
+    }
     drawDiverStand(g, {
       x: px + ox2, y: py - 28 * sc + Z * 0.2, scale: sc, color: p.color, skin: p.skin,
       t: this.tt + i * 1.7, cos: p.cosmetics,
       mood: this.state === 'reward' ? 'cheer' : 'idle',
     });
+    g.restore();
     if (p.shield) {
       g.strokeStyle = '#59d9ff'; g.lineWidth = 2.5; g.globalAlpha = 0.8;
       g.beginPath(); g.arc(px + ox2, py - Z * 2.6, Z * 3.6, 0, TAU); g.stroke(); g.globalAlpha = 1;
@@ -850,13 +1067,26 @@ class Board {
     this.players.forEach((p, i) => {
       const x = 6 + i * (cw + 6), y = safeTop;
       const active = this.playerIdx === i && this.state !== 'splash';
-      g.fillStyle = active ? 'rgba(42,36,16,0.94)' : 'rgba(16,22,36,0.85)';
-      g.strokeStyle = active ? p.color : '#2a3450'; g.lineWidth = 2.5;
       const r = 10;
+      const chipPath = () => {
+        g.beginPath();
+        g.moveTo(x + r, y); g.arcTo(x + cw, y, x + cw, y + ch, r);
+        g.arcTo(x + cw, y + ch, x, y + ch, r); g.arcTo(x, y + ch, x, y, r);
+        g.arcTo(x, y, x + cw, y, r); g.closePath();
+      };
+      // drop shadow, gradient panel, glowing border for the active player
+      g.fillStyle = 'rgba(0,0,0,0.35)';
       g.beginPath();
-      g.moveTo(x + r, y); g.arcTo(x + cw, y, x + cw, y + ch, r);
-      g.arcTo(x + cw, y + ch, x, y + ch, r); g.arcTo(x, y + ch, x, y, r);
-      g.arcTo(x, y, x + cw, y, r); g.closePath(); g.fill(); g.stroke();
+      g.moveTo(x + r, y + 3); g.arcTo(x + cw, y + 3, x + cw, y + ch + 3, r);
+      g.arcTo(x + cw, y + ch + 3, x, y + ch + 3, r); g.arcTo(x, y + ch + 3, x, y + 3, r);
+      g.arcTo(x, y + 3, x + cw, y + 3, r); g.closePath(); g.fill();
+      const pg2 = g.createLinearGradient(x, y, x, y + ch);
+      if (active) { pg2.addColorStop(0, 'rgba(64,52,20,0.96)'); pg2.addColorStop(1, 'rgba(38,30,12,0.96)'); }
+      else { pg2.addColorStop(0, 'rgba(28,36,58,0.88)'); pg2.addColorStop(1, 'rgba(12,16,30,0.88)'); }
+      g.fillStyle = pg2;
+      g.strokeStyle = active ? p.color : '#2a3450';
+      g.lineWidth = active ? 2.5 + Math.sin(this.tt * 5) * 0.7 : 2.5;
+      chipPath(); g.fill(); g.stroke();
       // mini avatar with their cosmetics
       drawDiverTop(g, { x: x + 15, y: y + ch / 2, r: 10, color: p.color, t: this.tt + i, speedNorm: 0, cos: p.cosmetics });
       g.textAlign = 'left'; g.font = '800 11px system-ui';
