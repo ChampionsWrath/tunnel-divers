@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=26';
+import { drawDiverTop, drawDiverStand } from './character.js?v=27';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -118,6 +118,7 @@ const NODE_STYLE = {
   shop: ['#a1e887', '🛒'], pinata: ['#e08bd0', '🪅'], mascot: ['#ffb84d', '🎭'],
   warp: ['#59d9ff', '🌀'],
 };
+const PREV_COLS = ['#ffd23f', '#59d9ff', '#e08bd0'];   // branch-choice colors: button ↔ path ↔ pin
 
 /* ================================================================ */
 export function createBoard(ctx) { return new Board(ctx); }
@@ -265,8 +266,19 @@ class Board {
     const node = this.map[p.node];
     const opts = this.moveDir > 0 ? node.next : node.prev;
     if (this.moveDir > 0 && opts.length > 1) {
-      // FORK: the mover chooses
+      // FORK: the mover chooses — precompute where each choice actually LANDS
+      // with the steps left (stopping early if another fork would interrupt)
       this.state = 'branch'; this.stateT = 0; this.branchOpts = opts; this.botT = 1 + this.rng();
+      this.branchPreviews = opts.map(nid => {
+        const path = [nid]; let cur = nid, rem = this.moveSteps - 1, unsure = false;
+        while (rem > 0) {
+          const nx = this.map[cur].next;
+          if (nx.length > 1) { unsure = true; break; }   // you'd choose again there
+          if (!nx.length) break;
+          cur = nx[0]; path.push(cur); rem--;
+        }
+        return { opt: nid, land: cur, path, unsure };
+      });
       return;
     }
     // deterministic pick: rng streams diverge across clients (authority-only draws),
@@ -551,14 +563,19 @@ class Board {
         this.dice.t += rdt;
         if (this.dice.t > 1.0 && !this.dice.settled) {
           this.dice.settled = true;
+          this.ctx.audio.sfx.pow();
           const pnd = this.cur().pending;
           let steps = this.dice.v, dir = 1;
           if (pnd === 'tripped') { steps = 4; this.cur().pending = 'trippedLand'; this.pop('🤸 Flat 4!', '#ffb84d'); }
           else if (pnd === 'drunk') {
             dir = (this.dice.v % 2 === 1) ? 1 : -1; this.cur().pending = null;
-            this.pop(dir > 0 ? '🍺 Odd — forward!' : '🍺 Even — BACKWARD!', dir > 0 ? '#7dff6a' : '#ff5f5f');
-          }
-          this.beginMove(steps, dir);
+            this.pop(dir > 0 ? '🍺 ' + this.dice.v + ' is odd — forward!' : '🍺 ' + this.dice.v + ' is even — BACKWARD!', dir > 0 ? '#7dff6a' : '#ff5f5f');
+          } else this.pop('🎲 ' + this.dice.v + '!', '#ffeccf', 32);
+          this.pendingMove = { steps, dir };   // hold here — let everyone SEE the roll
+        }
+        if (this.dice.settled && this.dice.t > 2.15) {
+          const m = this.pendingMove; this.pendingMove = null;
+          this.beginMove(m.steps, m.dir);
         }
         break;
       }
@@ -570,6 +587,18 @@ class Board {
         if (this.myTurn() && clicks.length) {
           const hit = this.hitButton(clicks);
           if (hit && hit.id.startsWith('br')) { this.act('branch', { n: +hit.id.slice(2) }); break; }
+          // tapping the LANDING pin also picks that route
+          let picked = false;
+          for (const [cx2, cy2] of clicks) {
+            for (const pv of (this.branchPreviews || [])) {
+              const [lx, ly] = this.nodeXY(pv.land);
+              if (Math.hypot(cx2 - lx, cy2 - ly) < (this.zoom || 10) * 4.5) {
+                this.act('branch', { n: pv.opt }); picked = true; break;
+              }
+            }
+            if (picked) break;
+          }
+          if (picked) break;
           for (const [cx2, cy2] of clicks) {
             for (const nid of this.branchOpts) {
               const [nx, ny] = this.nodeXY(nid);
@@ -901,6 +930,42 @@ class Board {
       else if (it.kind === 'decor') this.drawDecor(g, it.dc, it.px, it.py, Z);
       else this.drawStanding(g, it.p, it.i, it.px, it.py, Z);
     }
+    // FORK PREVIEW: per choice, trace the route and pin where you'd LAND
+    if (this.state === 'branch' && this.branchPreviews) {
+      const p0 = this.cur();
+      this.branchPreviews.forEach((pv, i) => {
+        const col = PREV_COLS[i % PREV_COLS.length];
+        // dashed route line from the diver through the path
+        g.strokeStyle = col; g.lineWidth = Math.max(2.5, Z * 0.45);
+        g.globalAlpha = 0.75; g.setLineDash([Z * 0.9, Z * 0.7]);
+        g.lineDashOffset = -this.tt * Z * 2;   // marching ants toward the landing
+        g.beginPath();
+        const [sx0, sy0] = this.proj(p0.ax, p0.ay);
+        g.moveTo(sx0, sy0);
+        for (const nid of pv.path) { const [nx2, ny2] = this.nodeXY(nid); g.lineTo(nx2, ny2); }
+        g.stroke();
+        g.setLineDash([]); g.globalAlpha = 1;
+        // pulsing ring on the landing tile
+        const [lx, ly] = this.nodeXY(pv.land);
+        g.globalAlpha = 0.55 + 0.3 * Math.sin(this.tt * 5 + i * 2);
+        g.strokeStyle = col; g.lineWidth = 3.5;
+        g.beginPath(); g.ellipse(lx, ly + Z * 0.3, Z * 4.2, Z * 2.6, 0, 0, TAU); g.stroke();
+        g.globalAlpha = 1;
+        // bobbing pin above it: the landing space's icon (⑂ = another choice there)
+        const bob2 = Math.sin(this.tt * 5 + i * 2) * Z * 0.3;
+        const py3 = ly - Z * 6 + bob2;
+        g.fillStyle = col; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+        g.beginPath(); g.moveTo(lx, ly - Z * 2.2 + bob2);
+        g.lineTo(lx - Z * 1.1, py3 + Z * 1.2); g.lineTo(lx + Z * 1.1, py3 + Z * 1.2);
+        g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); g.arc(lx, py3, Z * 1.8, 0, TAU); g.fill(); g.stroke();
+        g.fillStyle = '#14100a';
+        g.font = '900 ' + Math.round(Z * 1.6) + 'px system-ui';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(pv.unsure ? '⑂' : NODE_STYLE[this.map[pv.land].type][1], lx, py3 + 1);
+        g.textBaseline = 'alphabetic';
+      });
+    }
     // dice above the active player's head
     if ((this.state === 'menu' || this.state === 'dicing') && this.cur() && !this.mapView) {
       const p = this.cur();
@@ -909,7 +974,8 @@ class Board {
       const settled = this.dice && this.dice.settled;
       const shown = this.state === 'dicing' && this.dice
         ? (settled ? this.dice.v : 1 + Math.floor(this.tt * 17 % 6)) : 0;
-      const popIn = settled ? 1 + Math.max(0, 0.35 - (this.dice.t - 1.0)) : 1;   // lands with a pop
+      // settled: POP big and STAY big for the reveal beat, so the number reads
+      const popIn = settled ? 1.4 + Math.max(0, 0.45 - (this.dice.t - 1.0)) * 1.3 : 1;
       g.save(); g.translate(px2, dy2); g.scale(popIn, popIn);
       if (!settled) g.rotate(Math.sin(this.tt * 14) * 0.3);
       // pseudo-3D block: top + right faces behind the front face
@@ -1287,12 +1353,17 @@ class Board {
         const opts = [...this.branchOpts].sort((a, b) => this.nodeXY(a)[0] - this.nodeXY(b)[0]);
         const bw = Math.min(150, W * 0.42);
         opts.forEach((nid, i) => {
-          const node = this.map[nid];
           const [nx2] = this.nodeXY(nid);
           const dir = nx2 < mx2 ? '⬅' : '➡';
-          const icon = NODE_STYLE[node.type][1];
+          // label with where you'd LAND, color-matched to the pin on the board
+          const pv = (this.branchPreviews || []).find(q => q.opt === nid);
+          const pi = this.branchPreviews ? this.branchPreviews.indexOf(pv) : i;
+          const icon = pv ? (pv.unsure ? '⑂?' : NODE_STYLE[this.map[pv.land].type][1]) : NODE_STYLE[this.map[nid].type][1];
           const x = W / 2 - bw - 8 + i * (bw + 16);
-          this.addButton(g, 'br' + nid, dir + ' ' + icon + ' path', x, cy - 30, bw, 44);
+          this.addButton(g, 'br' + nid, dir + '  land: ' + icon, x, cy - 30, bw, 44);
+          g.fillStyle = PREV_COLS[pi % PREV_COLS.length];   // matching color chip
+          g.strokeStyle = '#14100a'; g.lineWidth = 2;
+          g.beginPath(); g.arc(x + 16, cy - 8, 7, 0, TAU); g.fill(); g.stroke();
         });
       }
     } else if (this.state === 'mgIntro') {
