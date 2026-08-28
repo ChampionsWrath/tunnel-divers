@@ -22,6 +22,28 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 23) — board network redesign + warp cannons
+- buildMap REWRITTEN: 37 explicit nodes (SPEC coords + EDGES list) — outer
+  promenade + left midway (3→26-29→19, upward) + right midway (15→30-33→7,
+  downward) + shore shortcut (23→34-35→28) + pier cut (10→36→33). FOUR
+  forks: nodes 3/10/15/23. Circulation crisscrosses — no more circle feel.
+- **Warp cannons**: type 'warp' (cyan 🌀, NODE_STYLE), fixed pairs 2↔16 and
+  12↔24 via node.warpTo. LANDING triggers nodeAction case 'warp' → state
+  'warping' (1.1s arc, apex −17 units, squash+dust on landing) →
+  endPlayerTurn. Deterministic fixed pairs = zero net traffic, all clients
+  animate identically. Twin does NOT re-fire; forceBack/pass-through don't
+  trigger. Remote-act queue unaffected (menu-gated acts wait it out).
+- Spacing: ≥9.2 world units between ANY two nodes (tile spans ~6.6x6.2) —
+  overlap complaint fixed. World now ~108x72: Zfit=min(W/120, H*0.68/80),
+  wide-focus (54,37). Decor repositioned into the network's pockets (paths
+  now cross the middle — no big open center). Tutorial card 2 mentions
+  forks + cannons.
+- Verified: graph (37/37 reachable, 0 dead ends/orphans, min dist 9.2,
+  symmetric warps), forced cannon ride 2→16 lands + ends turn, full bot
+  game clean, map-view screenshot sent to Sam. NOTE startTurnPlayer resets
+  mapView each turn (test screenshots must hold at a human menu).
+- Build 26, deployed 102a184.
+
 ## Session 2026-08-28 (round 22) — bodies, t-shirt+jeans, sticky preview, tutorial
 - ward gains {body:'m'|'f', shirtCol}. Female: tapered/flared tee silhouette
   (path replaces roundRect torso) + lashes on lenses front AND top view.
