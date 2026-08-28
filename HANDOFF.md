@@ -22,6 +22,27 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-26 (round 16) — lava ladder + Diner Dash + trash fix
+- **Floor is Lava difficulty ladder** (Sam's spec): tiles now carry
+  {col, shape (●▲■, from r6), num (1-3, from r10)}; the call escalates one
+  mechanic at a time — r1-5 color · r6-7 shape · r8-9 color+shape · r10
+  number · r11 color+number · r12-14 full combo ("YELLOW ■ 1"). specFor(r)
+  is the schedule; matches(t) is the single safety judge (sink/judging/
+  cracks/bots all use it). Fair scaling: showT bases 3.4/4.3/5.2s by attr
+  count, −0.12s/round, +0.7s grace on each phase's debut round (6/8/10/11/
+  12); bot reaction +0.45s per extra attribute. MAX_ROUNDS 12→14.
+- **Food Flash renamed Diner Dash** — display name only, id stays 'food'
+  (board gameIds, results, net messages unaffected).
+- **Trash can fix** (Sam kept losing items unknowingly): dump radius
+  PRr+6→PRr+2, red hazard-striped can + TRASH label, pulsing dashed ring
+  marks the exact dump zone while carrying, dumping pops "🗑️ TRASHED
+  <item>!" + flash (this.trashFx).
+- Verified headlessly at v19: spec ladder correct at r1/5/6/7/8/10/11/12/14
+  (safe counts 6→1, shapes/nums appear on schedule, labels right), full
+  14-round bot game completes, render OK with badges; trash keeps item at
+  old accidental distance and trashes+pops inside new radius. Deployed
+  9d2811f.
+
 ## Session 2026-08-26 (round 15) — skin tone slider
 - Sam: "add a skin tone cosmetic to the character editor, make it a slider."
 - tunnel-divers.html cosmetics panel: SKIN TONE row at the top — gradient
