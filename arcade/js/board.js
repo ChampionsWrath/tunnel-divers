@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=27';
+import { drawDiverTop, drawDiverStand } from './character.js?v=28';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -24,8 +24,10 @@ function shadeCol(hex, f) {
 /* ---------------- economy registry ---------------- */
 export const ITEMS = {
   tripped: { name: 'Tripped and Fell', icon: '🤸', cost: 5, desc: 'Next turn: move exactly 4. Land on someone → knock them back 2.' },
-  drunk: { name: 'Drunk Stumble', icon: '🍺', cost: 3, desc: 'Next turn: odd roll = forward, even roll = BACKWARD.' },
+  drunk: { name: 'Drunk Stumble', icon: '🍺', cost: 3, desc: 'Next turn: FATE picks where you land. Chaos.' },
   shield: { name: 'Cardboard Shield', icon: '🛡️', cost: 6, desc: 'Passive: blocks the next steal or mascot launch.' },
+  loaded: { name: 'Loaded Dice', icon: '🎯', cost: 7, desc: 'Next roll: YOU pick the number (1-6). One use.' },
+  mystery: { name: 'Mystery Box', icon: '🎁', cost: 25, desc: 'Pops open on the spot: a random cosmetic, guaranteed!', instant: true },
 };
 export const COSMETICS = [
   { id: 'prop', name: 'Propeller Hat', icon: '🧢', tier: 'common', value: 10 },
@@ -140,8 +142,41 @@ class Board {
     this.moveQ = []; this.moveT = 0; this.stepFrom = null; this.overlay = null;
     this.botT = 0; this.dice = null; this.paused = false;
     this.clicks = [];
-    this._pd = e => { this.clicks.push([e.clientX, e.clientY]); };
+    // free-look zoom: pinch on touch, ctrl/⌘+click or wheel on desktop.
+    // userZoom multiplies the state's target zoom; 1 = default framing.
+    this.userZoom = 1; this._pts = new Map(); this._pinch0 = null;
+    this._pd = e => {
+      this._pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this._pts.size === 2) {
+        const [a, b] = [...this._pts.values()];
+        this._pinch0 = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: this.userZoom };
+        return;                                   // two fingers = gesture, not a tap
+      }
+      if (e.ctrlKey || e.metaKey) {               // desktop: ctrl+click zooms out a notch
+        this.userZoom = this.userZoom > 0.6 ? 0.45 : 1;
+        return;
+      }
+      if (this._pts.size === 1) this.clicks.push([e.clientX, e.clientY]);
+    };
+    this._pm = e => {
+      if (!this._pts.has(e.pointerId)) return;
+      this._pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (this._pts.size === 2 && this._pinch0) {
+        const [a, b] = [...this._pts.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        this.userZoom = clamp(this._pinch0.z * (d / Math.max(1, this._pinch0.d)), 0.32, 1.9);
+      }
+    };
+    this._pu = e => { this._pts.delete(e.pointerId); if (this._pts.size < 2) this._pinch0 = null; };
+    this._wh = e => {
+      e.preventDefault();
+      this.userZoom = clamp(this.userZoom * (e.deltaY > 0 ? 0.9 : 1.11), 0.32, 1.9);
+    };
     ctx.cv.addEventListener('pointerdown', this._pd);
+    ctx.cv.addEventListener('pointermove', this._pm);
+    ctx.cv.addEventListener('pointerup', this._pu);
+    ctx.cv.addEventListener('pointercancel', this._pu);
+    ctx.cv.addEventListener('wheel', this._wh, { passive: false });
     if (ctx.onNet) ctx.onNet((t, p) => { if (t === 'bd') this.queueAct(p); });
     this.isNetHost = !ctx.net || ctx.net.isHost;
     this.rq = [];   // remote acts wait here until the local state machine can accept them
@@ -197,7 +232,8 @@ class Board {
     switch (a) {
       case 'roll': case 'skipItem': case 'playItem': return this.state === 'menu';
       case 'branch': return this.state === 'branch';
-      case 'buy': case 'shopDone': return !!this.overlay && this.overlay.kind === 'shop';
+      case 'dest': return this.state === 'pickDest';
+      case 'buy': case 'shopDone': case 'mbox': return !!this.overlay && this.overlay.kind === 'shop';
       case 'mascot': return !!this.overlay && this.overlay.kind === 'mascot';
       case 'pinata2': return !!this.overlay && this.overlay.kind === 'pinata';
       case 'steal': return this.state === 'action';
@@ -221,6 +257,14 @@ class Board {
       case 'playItem': this.doPlayItem(d.idx); break;
       case 'roll': this.doRoll(d.v, d.dir); break;
       case 'branch': this.doBranch(d.n); break;
+      case 'dest': this.doDest(d.path); break;
+      case 'mbox': {
+        const p = this.cur(), c = cosmetic(d.c);
+        p.cosmetics.push(d.c);
+        this.pop('🎁 ' + c.icon + ' ' + c.name + ' (+' + c.value + 'pts)!', '#ffd23f', 24);
+        this.ctx.audio.sfx.win();
+        break;
+      }
       case 'buy': this.doBuy(d.item); break;
       case 'shopDone': this.closeShop(); break;
       case 'mascot': this.doMascot(d.bet, d.win); break;
@@ -250,6 +294,7 @@ class Board {
   }
   doRoll(v, dir) {
     const p = this.cur();
+    if (p.pending === 'loaded') p.pending = null;   // the pick IS the roll
     this.dice = { v, t: 0, settled: false };
     this.state = 'dicing'; this.stateT = 0;
     this.rollDir = dir;   // 1 forward, -1 backward (drunk stumble)
@@ -260,9 +305,36 @@ class Board {
     this.state = 'move'; this.moveSteps = steps; this.moveT = 0;
     this.advanceStep();
   }
+  /* FREE MOVEMENT: every destination exactly N steps away, any direction,
+     via non-backtracking walks over the board graph (both edge directions) */
+  computeDests(startNode, steps) {
+    const found = new Map();   // end nodeId -> the path that reaches it
+    const walk = (cur, from, left, path) => {
+      if (left === 0) { if (!found.has(cur)) found.set(cur, [...path]); return; }
+      const nbs = new Set([...this.map[cur].next, ...this.map[cur].prev]);
+      for (const nb of nbs) {
+        if (nb === from) continue;             // no mid-walk U-turns
+        path.push(nb); walk(nb, cur, left - 1, path); path.pop();
+      }
+    };
+    walk(startNode, -1, steps, []);
+    return [...found.entries()].map(([end, path]) => ({ end, path })).sort((a, b) => a.end - b.end);
+  }
+  enterPickDest(steps, forcedRandom) {
+    this.destOptions = this.computeDests(this.cur().node, steps);
+    this.forcedRandom = !!forcedRandom;        // drunk stumble: fate chooses
+    this.state = 'pickDest'; this.stateT = 0; this.botT = 1.4 + this.rng();
+  }
+  doDest(path) {
+    this.destOptions = null;
+    this.forcedPath = [...path];
+    this.moveDir = 1; this.state = 'move'; this.moveSteps = path.length; this.moveT = 0;
+    this.advanceStep();
+  }
   advanceStep() {
     const p = this.cur();
-    if (this.moveSteps <= 0) { this.landOn(); return; }
+    if (this.moveSteps <= 0) { this.forcedPath = null; this.landOn(); return; }
+    if (this.forcedPath && this.forcedPath.length) { this.stepTo(this.forcedPath.shift()); return; }
     const node = this.map[p.node];
     const opts = this.moveDir > 0 ? node.next : node.prev;
     if (this.moveDir > 0 && opts.length > 1) {
@@ -415,6 +487,16 @@ class Board {
   }
   doBuy(item) {
     const p = this.cur(), def = ITEMS[item];
+    if (def.instant) {                          // Mystery Box: pops open right here
+      if (p.coins < def.cost) return;
+      p.coins -= def.cost;
+      this.ctx.audio.sfx.coin(6);
+      if (this.authority()) {                   // buyer's client draws the prize
+        const c = COSMETICS[Math.floor(this.rng() * COSMETICS.length)];
+        this.act('mbox', { c: c.id });
+      }
+      return;
+    }
     if (p.coins < def.cost || p.items.length >= 3) return;
     p.coins -= def.cost; p.items.push(item);
     this.pop(def.icon + ' ' + def.name + ' bought!', '#a1e887');
@@ -436,8 +518,15 @@ class Board {
     this.playerIdx = 0;                       // rotation done; keep cur() valid
     this.state = 'mgIntro'; this.stateT = 0;
     if (this.isNetHost) {
-      const ids = this.ctx.gameIds;
-      const gid = ids[Math.floor(this.rng() * ids.length)];
+      // shuffled deck: NO minigame repeats until every game has been played
+      if (!this.mgDeck || !this.mgDeck.length) {
+        this.mgDeck = [...this.ctx.gameIds];
+        for (let i = this.mgDeck.length - 1; i > 0; i--) {
+          const j = Math.floor(this.rng() * (i + 1));
+          [this.mgDeck[i], this.mgDeck[j]] = [this.mgDeck[j], this.mgDeck[i]];
+        }
+      }
+      const gid = this.mgDeck.pop();
       const seed = (this.ctx.seed ^ (this.turn * 7919)) >>> 0;
       this.pendingMg = { gid, seed };
       if (this.ctx.net) this.ctx.net.send('bd', { a: 'mg', d: { gid, seed } });
@@ -490,10 +579,17 @@ class Board {
     const { W, H } = this.ctx.dim;
     const Zfit = Math.min(W / 120, (H * 0.68) / 80), Zgame = Math.min(W, H) / 34;
     const wide = this.state === 'splash' || this.state === 'end' || this.mapView;
-    const zoomT = wide ? Zfit : Zgame;
+    // pinch / ctrl-click / wheel scales the framing; below ~0.8 we drift toward
+    // the whole-park view so zooming out always shows you more of the board
+    const uz = this.userZoom || 1;
+    const zoomT = clamp((wide ? Zfit : Zgame) * uz, Zfit * 0.55, Zgame * 2);
     if (this.zoom === undefined) { this.zoom = Zfit; this.camX = 54; this.camY = 37; }
     this.zoom += (zoomT - this.zoom) * Math.min(1, rdt * 2.2);
-    const foc = wide ? { ax: 54, ay: 37 } : this.cur();
+    const wideF = wide ? 1 : clamp((1 - uz) / 0.35, 0, 1);   // pan toward park center as you zoom out
+    const me = this.cur();
+    const foc = {
+      ax: lerp(me.ax, 54, wideF), ay: lerp(me.ay, 37, wideF),
+    };
     this.camX += (foc.ax - this.camX) * Math.min(1, rdt * 4);
     this.camY += (foc.ay - this.camY) * Math.min(1, rdt * 4);
     for (let i = this.pops.length; i--;) { this.pops[i].t += rdt; if (this.pops[i].t > this.pops[i].dur) this.pops.splice(i, 1); }
@@ -522,6 +618,14 @@ class Board {
     const p = this.cur ? this.cur() : null;
     const auth = this.authority();
     const clicks = this.clicks; // consumed per state below
+    // MAP toggle works in ANY state (a corner button is always on screen)
+    if (this.tut == null && clicks.length) {
+      const mh = this.hitButton(clicks);
+      if (mh && mh.id === 'mapAny') {
+        this.mapView = !this.mapView; this.ctx.audio.sfx.ui();
+        clicks.length = 0;
+      }
+    }
     // tutorial cards swallow taps while open — the game itself keeps running
     // underneath (remote acts still mirror; your own turn just waits for you)
     if (this.tut != null) {
@@ -568,14 +672,38 @@ class Board {
           let steps = this.dice.v, dir = 1;
           if (pnd === 'tripped') { steps = 4; this.cur().pending = 'trippedLand'; this.pop('🤸 Flat 4!', '#ffb84d'); }
           else if (pnd === 'drunk') {
-            dir = (this.dice.v % 2 === 1) ? 1 : -1; this.cur().pending = null;
-            this.pop(dir > 0 ? '🍺 ' + this.dice.v + ' is odd — forward!' : '🍺 ' + this.dice.v + ' is even — BACKWARD!', dir > 0 ? '#7dff6a' : '#ff5f5f');
+            dir = -1; this.cur().pending = null;   // fate picks the destination
+            this.pop('🍺 ' + this.dice.v + ' — fate decides where you land!', '#ff5f5f');
           } else this.pop('🎲 ' + this.dice.v + '!', '#ffeccf', 32);
           this.pendingMove = { steps, dir };   // hold here — let everyone SEE the roll
         }
         if (this.dice.settled && this.dice.t > 2.15) {
           const m = this.pendingMove; this.pendingMove = null;
-          this.beginMove(m.steps, m.dir);
+          this.enterPickDest(m.steps, m.dir < 0);   // pick where to land (drunk = fate)
+        }
+        break;
+      }
+      case 'pickDest': {
+        const opts = this.destOptions || [];
+        if (!opts.length) { this.endPlayerTurn(0.5); break; }
+        if (auth && (this.forcedRandom || p.bot)) {
+          if (this.forcedRandom && this.stateT < 1.2) break;   // let the chaos land dramatically
+          if (p.bot && !this.forcedRandom && (this.botT -= rdt) > 0) break;
+          const pick = opts[Math.floor(this.rng() * opts.length)];
+          this.act('dest', { path: pick.path });
+          break;
+        }
+        if (this.myTurn() && !this.forcedRandom && clicks.length) {
+          let done2 = false;
+          for (const [cx2, cy2] of clicks) {
+            for (const o of opts) {
+              const [nx, ny] = this.nodeXY(o.end);
+              if (Math.hypot(cx2 - nx, cy2 - ny) < (this.zoom || 10) * 4.5) {
+                this.act('dest', { path: o.path }); done2 = true; break;
+              }
+            }
+            if (done2) break;
+          }
         }
         break;
       }
@@ -667,11 +795,26 @@ class Board {
     this.clicks.length = 0;
   }
   rollNow() {
+    const p = this.cur();
+    if (p.pending === 'loaded') {              // Loaded Dice: pick your number
+      if (p.bot) { this.act('roll', { v: 6 }); return; }
+      this.overlay = { kind: 'pickroll', t: 0 }; this.ctx.audio.sfx.ui(); return;
+    }
     const v = 1 + Math.floor(this.rng() * 6);
     this.act('roll', { v });
   }
   handleOverlay(rdt, p, auth, clicks) {
     const o = this.overlay;
+    if (o.kind === 'pickroll') {               // Loaded Dice: choose 1-6
+      if (this.myTurn()) {
+        const hit = this.hitButton(clicks);
+        if (hit && hit.id.startsWith('pv')) {
+          this.overlay = null;
+          this.act('roll', { v: +hit.id.slice(2) });
+        }
+      } else this.overlay = null;
+      return;
+    }
     if (o.kind === 'items') {
       if (this.myTurn()) {
         const hit = this.hitButton(clicks);
@@ -706,7 +849,7 @@ class Board {
     } else if (o.kind === 'shop') {
       if (p.bot && auth && (this.botT -= rdt) <= 0) {
         this.botT = 0.8 + this.rng() * 0.5;
-        const wants = Object.keys(ITEMS).filter(k => p.coins >= ITEMS[k].cost && p.items.length < 3);
+        const wants = Object.keys(ITEMS).filter(k => p.coins >= ITEMS[k].cost && (ITEMS[k].instant || p.items.length < 3));
         if (wants.length && this.rng() < 0.55) this.act('buy', { item: wants[Math.floor(this.rng() * wants.length)] });
         else this.act('shopDone', {});
       } else if (this.myTurn()) {
@@ -930,6 +1073,37 @@ class Board {
       else if (it.kind === 'decor') this.drawDecor(g, it.dc, it.px, it.py, Z);
       else this.drawStanding(g, it.p, it.i, it.px, it.py, Z);
     }
+    // DESTINATION PICKER: every space exactly N steps away, tap to go
+    if (this.state === 'pickDest' && this.destOptions) {
+      const p0 = this.cur();
+      const [sx0, sy0] = this.proj(p0.ax, p0.ay);
+      this.destOptions.forEach((o, i) => {
+        const [lx, ly] = this.nodeXY(o.end);
+        const col = this.forcedRandom ? '#ff5f5f' : '#ffd23f';
+        // faint route thread so you can see HOW you'd get there
+        g.strokeStyle = col; g.globalAlpha = 0.22; g.lineWidth = Math.max(1.5, Z * 0.22);
+        g.setLineDash([Z * 0.6, Z * 0.6]);
+        g.beginPath(); g.moveTo(sx0, sy0);
+        for (const nid of o.path) { const [nx2, ny2] = this.nodeXY(nid); g.lineTo(nx2, ny2); }
+        g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+        // pulsing landing ring + bobbing marker
+        const ph = this.tt * 4.5 + i * 0.9;
+        g.globalAlpha = 0.6 + 0.3 * Math.sin(ph);
+        g.strokeStyle = col; g.lineWidth = 3.5;
+        g.beginPath(); g.ellipse(lx, ly + Z * 0.3, Z * 4.2, Z * 2.6, 0, 0, TAU); g.stroke();
+        g.globalAlpha = 1;
+        const bob2 = Math.sin(ph) * Z * 0.3, py3 = ly - Z * 5.6 + bob2;
+        g.fillStyle = col; g.strokeStyle = '#14100a'; g.lineWidth = 2.5;
+        g.beginPath(); g.moveTo(lx, ly - Z * 2.2 + bob2);
+        g.lineTo(lx - Z * 1.0, py3 + Z * 1.1); g.lineTo(lx + Z * 1.0, py3 + Z * 1.1);
+        g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); g.arc(lx, py3, Z * 1.7, 0, TAU); g.fill(); g.stroke();
+        g.fillStyle = '#14100a'; g.font = '900 ' + Math.round(Z * 1.5) + 'px system-ui';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(NODE_STYLE[this.map[o.end].type][1], lx, py3 + 1);
+        g.textBaseline = 'alphabetic';
+      });
+    }
     // FORK PREVIEW: per choice, trace the route and pin where you'd LAND
     if (this.state === 'branch' && this.branchPreviews) {
       const p0 = this.cur();
@@ -1049,8 +1223,9 @@ class Board {
         'Score = coins 🪙 + cosmetics ⭐',
       ]],
       ['🎲 ON YOUR TURN', [
-        'ROLL and walk the boardwalk —',
-        'pick your path at every ⑂ fork!',
+        'ROLL, then TAP any glowing space',
+        'exactly that many steps away —',
+        'forward, back, any route you like!',
         '🔵 +3 · 🔴 −3 · 🛒 shop · 🪅 cosmetics',
         '🌀 cannons BLAST you across the park',
       ]],
@@ -1326,6 +1501,30 @@ class Board {
     const p = this.cur(), mine = this.myTurn();
     const cy = H * 0.82 - (this.ctx.dim.safeBottom || 0);
     g.textAlign = 'center';
+    // always-available map + zoom controls (any state, any player's turn)
+    {
+      const sy = (this.ctx.dim.safeTop || 0) + 62;
+      this.addButton(g, 'mapAny', this.mapView ? '✕' : '🗺️', W - 52, sy, 42, 38, !this.mapView);
+      g.font = '700 9px system-ui'; g.fillStyle = 'rgba(255,236,207,0.6)'; g.textAlign = 'center';
+      g.fillText('pinch', W - 31, sy + 50);
+      g.fillText('to zoom', W - 31, sy + 60);
+      if ((this.userZoom || 1) !== 1) {
+        g.font = '800 11px system-ui'; g.fillStyle = '#ffd23f';
+        g.fillText(Math.round((this.userZoom || 1) * 100) + '%', W - 31, sy + 74);
+      }
+    }
+    if (this.state === 'pickDest' && mine && !this.forcedRandom) {
+      g.font = '900 17px system-ui'; g.fillStyle = '#ffd23f';
+      g.fillText('🎲 ' + (this.destOptions ? this.destOptions.length : 0) + ' SPACES IN RANGE — tap one!', W / 2, cy);
+      g.font = '700 12px system-ui'; g.fillStyle = '#93a0bd';
+      g.fillText('any direction · pinch to see more of the board', W / 2, cy + 20);
+    } else if (this.state === 'pickDest' && this.forcedRandom) {
+      g.font = '900 17px system-ui'; g.fillStyle = '#ff5f5f';
+      g.fillText('🍺 FATE IS CHOOSING…', W / 2, cy);
+    } else if (this.state === 'pickDest') {
+      g.font = '800 15px system-ui'; g.fillStyle = p.color;
+      g.fillText(p.name + ' is picking a space…', W / 2, cy);
+    }
     if (this.state === 'menu') {
       if (mine) {
         if (this.mapView) {
@@ -1389,6 +1588,19 @@ class Board {
   drawOverlay(g, W, H) {
     const o = this.overlay, p = this.cur(), mine = this.myTurn();
     const bw = Math.min(360, W * 0.88), bx = W / 2 - bw / 2, by = H * 0.2;
+    if (o.kind === 'pickroll') {
+      const bh = 150;
+      g.fillStyle = 'rgba(10,8,16,0.92)'; g.fillRect(bx, by, bw, bh);
+      g.strokeStyle = '#ffd23f'; g.lineWidth = 3; g.strokeRect(bx, by, bw, bh);
+      g.font = '900 20px system-ui'; g.fillStyle = '#ffd23f'; g.textAlign = 'center';
+      g.fillText('🎯 LOADED DICE — pick your roll', W / 2, by + 30);
+      const cell = Math.min(52, (bw - 40) / 6);
+      for (let v = 1; v <= 6; v++) {
+        const x = W / 2 - cell * 3 + (v - 1) * cell + 3;
+        this.addButton(g, 'pv' + v, '' + v, x, by + 54, cell - 6, 56);
+      }
+      return;
+    }
     if (o.kind === 'items') {
       const bh = 84 + p.items.length * 58;
       g.fillStyle = 'rgba(10,8,16,0.92)'; g.fillRect(bx, by, bw, bh);
@@ -1468,6 +1680,13 @@ class Board {
     }
     if (line) g.fillText(line, x, yy);
   }
-  dispose() { this.ctx.cv.removeEventListener('pointerdown', this._pd); }
+  dispose() {
+    const cv = this.ctx.cv;
+    cv.removeEventListener('pointerdown', this._pd);
+    cv.removeEventListener('pointermove', this._pm);
+    cv.removeEventListener('pointerup', this._pu);
+    cv.removeEventListener('pointercancel', this._pu);
+    cv.removeEventListener('wheel', this._wh);
+  }
 }
 

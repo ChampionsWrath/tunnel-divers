@@ -81,7 +81,8 @@ export function attachTouch(cv) {
     touches.add(e.pointerId);
     if (ctl === 'tilt' && tiltOK) { taps[0] = true; return; }
     if (pad.id === null) {
-      pad.id = e.pointerId; pad.ox = e.clientX; pad.oy = e.clientY; pad.x = e.clientX; pad.y = e.clientY;
+      pad.id = e.pointerId; pad.x = e.clientX; pad.y = e.clientY;
+      pad.px = e.clientX; pad.py = e.clientY; pad.vx = 0; pad.vy = 0;
       pad.t0 = performance.now(); pad.sx = e.clientX; pad.sy = e.clientY;
     }
     else taps[0] = true;
@@ -109,10 +110,19 @@ export function getInput(slot, dt) {
     if (keys.KeyW) y -= 1; if (keys.KeyS) y += 1;
     if (ctl === 'tilt' && tiltOK) { const t = tiltXY(dt); x += t[0]; y += t[1]; }
     else if (pad.id !== null) {
-      pad.ox += (pad.x - pad.ox) * Math.min(1, (dt || 0.016) * 1.2);
-      pad.oy += (pad.y - pad.oy) * Math.min(1, (dt || 0.016) * 1.2);
-      const dx = pad.x - pad.ox, dy = pad.y - pad.oy, mag = Math.hypot(dx, dy);
-      if (mag > 5) { const n = Math.min(1, (mag - 5) / 38); x += dx / mag * n; y += dy / mag * n; }
+      // TRACKPAD steering: output follows finger VELOCITY — move your finger,
+      // the character moves with it; stop, and it stops. No virtual stick lag.
+      const idt = Math.max(dt || 0.016, 0.001);
+      const dx = pad.x - pad.px, dy = pad.y - pad.py;
+      pad.px = pad.x; pad.py = pad.y;
+      const k = Math.min(1, idt * 22);           // ~50ms smoothing, still snappy
+      pad.vx += (dx / idt - pad.vx) * k;
+      pad.vy += (dy / idt - pad.vy) * k;
+      const mag = Math.hypot(pad.vx, pad.vy);
+      if (mag > 25) {                            // tiny tremor deadband only
+        const n = Math.min(1, mag / 650);        // full speed ≈ a brisk finger drag
+        x += pad.vx / mag * n; y += pad.vy / mag * n;
+      }
     }
   } else {
     if (keys.ArrowLeft) x -= 1; if (keys.ArrowRight) x += 1;

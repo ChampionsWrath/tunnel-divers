@@ -1,24 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=27';
-import * as audio from './audio.js?v=27';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=27';
-import { Net, makeRoomCode } from './net.js?v=27';
-import tunnel from './games/tunnel.js?v=27';
-import stack from './games/stack.js?v=27';
-import crown from './games/crown.js?v=27';
-import brain from './games/brain.js?v=27';
-import blast from './games/blast.js?v=27';
-import food from './games/food.js?v=27';
-import homerun from './games/homerun.js?v=27';
-import trivia from './games/trivia.js?v=27';
-import ghost from './games/ghost.js?v=27';
-import greed from './games/greed.js?v=27';
-import lava from './games/lava.js?v=27';
-import rush from './games/rush.js?v=27';
-import { createBoard } from './board.js?v=27';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=27';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=28';
+import * as audio from './audio.js?v=28';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=28';
+import { Net, makeRoomCode } from './net.js?v=28';
+import tunnel from './games/tunnel.js?v=28';
+import stack from './games/stack.js?v=28';
+import crown from './games/crown.js?v=28';
+import brain from './games/brain.js?v=28';
+import blast from './games/blast.js?v=28';
+import food from './games/food.js?v=28';
+import homerun from './games/homerun.js?v=28';
+import trivia from './games/trivia.js?v=28';
+import ghost from './games/ghost.js?v=28';
+import greed from './games/greed.js?v=28';
+import lava from './games/lava.js?v=28';
+import rush from './games/rush.js?v=28';
+import { createBoard } from './board.js?v=28';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=28';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -37,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 27;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 28;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -216,18 +216,32 @@ function resetLocals() {
 }
 function lobbyPlayers() {
   if (!S.net) return S.locals;
-  // deterministic shared ordering: self + peers, sorted by net id
+  // deterministic shared ordering: self + peers sorted by net id, then the
+  // host's bots in host order (S.netBots is broadcast, identical everywhere)
   const rows = [{ nid: S.net.selfId, name: S.profile.name, skin: S.profile.skin, ward: S.profile.ward }];
   for (const pid in S.net.peers) {
     const pr = S.net.peers[pid] || {};
     rows.push({ nid: pid, name: pr.name || 'DIVER', skin: pr.skin, ward: pr.ward });
   }
   rows.sort((a, b) => a.nid < b.nid ? -1 : 1);
+  for (const nb of (S.netBots || []))
+    rows.push({ nid: nb.id, name: nb.name, skin: nb.skin, ward: nb.ward, bot: true });
   return rows.map((r, i) => ({
     id: r.nid, name: r.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     skin: r.skin == null ? 35 : r.skin, ward: migrateWard(r.ward),
-    local: r.nid === S.net.selfId, slot: 0, bot: false,
+    local: r.nid === S.net.selfId || !!r.bot,   // bots run on the net-host's authority
+    slot: r.bot ? -1 : 0, bot: !!r.bot,
   }));
+}
+function mkBotWard() {
+  const pick = arr => arr[(Math.random() * arr.length) | 0][0];
+  return {
+    body: Math.random() < 0.5 ? 'f' : 'm',
+    hair: pick(WARDROBE.hair), hat: pick(WARDROBE.hat), face: pick(WARDROBE.face),
+    hairCol: 'hsl(' + ((Math.random() * 360) | 0) + ',' + (30 + Math.random() * 60 | 0) + '%,' + (20 + Math.random() * 55 | 0) + '%)',
+    faceCol: DEF_FACE_COL,
+    shirtCol: 'hsl(' + ((Math.random() * 360) | 0) + ',65%,52%)',
+  };
 }
 function netStatusLine() {
   if (!S.net) return 'same-device party — add players & bots';
@@ -248,21 +262,52 @@ function renderLobby() {
   $('roomLine').textContent = netStatusLine();
   const list = $('playerList'); list.innerHTML = '';
   const ps = lobbyPlayers();
+  const canEditBots = !S.net || S.net.isHost;
   ps.forEach((p, i) => {
     const row = document.createElement('div'); row.className = 'pRow';
     row.innerHTML = '<span class="pDot" style="background:' + p.color + '"></span>' +
-      '<span class="who">' + p.name + (p.local && !S.net ? '' : p.local ? ' (you)' : '') + '</span>' +
+      '<span class="who">' + p.name + (p.local && !S.net ? '' : (p.local && !p.bot) ? ' (you)' : '') + '</span>' +
       '<span class="sub">' + (p.bot ? 'BOT' : S.net ? 'online' : ('P' + (p.slot + 1) + (p.slot === 0 ? ' · WASD/touch' : ' · arrows'))) + '</span>';
-    if (!S.net && i > 0) {
+    if (p.bot && canEditBots) {   // rename a bot — just for this game
+      const ed = document.createElement('button');
+      ed.className = 'btn tiny ghostBtn'; ed.textContent = '✏️';
+      ed.addEventListener('click', () => {
+        const who = row.querySelector('.who');
+        const inp = document.createElement('input');
+        inp.className = 'txt'; inp.maxLength = 12; inp.value = p.name;
+        inp.style.cssText = 'width:110px;padding:4px 8px;font-size:14px';
+        who.replaceWith(inp); inp.focus(); inp.select();
+        const commit = () => {
+          const nm = (inp.value.trim() || p.name).slice(0, 12).toUpperCase();
+          if (S.net) {
+            const nb = S.netBots.find(b => b.id === p.id);
+            if (nb) { nb.name = nm; S.net.send('bots', { list: S.netBots }); }
+          } else {
+            const lb = S.locals.find(b => b.id === p.id);
+            if (lb) lb.name = nm;
+          }
+          renderLobby();
+        };
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
+      });
+      row.appendChild(ed);
+    }
+    if (((!S.net && i > 0) || (S.net && p.bot && canEditBots))) {
       const del = document.createElement('button');
       del.className = 'btn tiny ghostBtn'; del.textContent = '✕';
-      del.addEventListener('click', () => { S.locals.splice(i, 1); renderLobby(); });
+      del.addEventListener('click', () => {
+        if (S.net) { S.netBots = S.netBots.filter(b => b.id !== p.id); S.net.send('bots', { list: S.netBots }); }
+        else S.locals.splice(i, 1);
+        renderLobby();
+      });
       row.appendChild(del);
     }
     list.appendChild(row);
   });
   $('btnAddLocal').style.display = (!S.net && S.locals.filter(p => !p.bot).length < 2) ? '' : 'none';
-  $('btnAddBot').style.display = (!S.net && S.locals.length < 4) ? '' : 'none';
+  $('btnAddBot').style.display =
+    (!S.net && S.locals.length < 4) || (S.net && S.net.isHost && ps.length < 4) ? '' : 'none';
   // modes
   const grid = $('modeGrid'); grid.innerHTML = '';
   for (const m of MODES) {
@@ -305,19 +350,21 @@ $('btnAddLocal').addEventListener('click', () => {
 $('btnAddBot').addEventListener('click', () => {
   audio.sfx.ui();
   const names = ['CHAD', 'BLINKY', 'MOOSE', 'GARY'];
-  const pick = arr => arr[(Math.random() * arr.length) | 0][0];
-  S.locals.push({
-    id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4],
-    color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0,
-    ward: {
-      body: Math.random() < 0.5 ? 'f' : 'm',
-      hair: pick(WARDROBE.hair), hat: pick(WARDROBE.hat), face: pick(WARDROBE.face),
-      hairCol: 'hsl(' + ((Math.random() * 360) | 0) + ',' + (30 + Math.random() * 60 | 0) + '%,' + (20 + Math.random() * 55 | 0) + '%)',
-      faceCol: DEF_FACE_COL,
-      shirtCol: 'hsl(' + ((Math.random() * 360) | 0) + ',65%,52%)',
-    },
-    local: true, slot: -1, bot: true,
-  });
+  if (S.net) {   // host adds a bot to the ONLINE room — broadcast so all clients agree
+    S.netBots = S.netBots || [];
+    S.netBots.push({
+      id: 'NB' + S.netBots.length + '_' + uid(),
+      name: names[S.netBots.length % 4],
+      skin: (Math.random() * 101) | 0, ward: mkBotWard(),
+    });
+    S.net.send('bots', { list: S.netBots });
+  } else {
+    S.locals.push({
+      id: 'B' + uid(), name: names[S.locals.filter(p => p.bot).length % 4],
+      color: PLAYER_COLORS[S.locals.length], skin: (Math.random() * 101) | 0,
+      ward: mkBotWard(), local: true, slot: -1, bot: true,
+    });
+  }
   renderLobby();
 });
 $('btnLeave').addEventListener('click', () => {
@@ -349,9 +396,15 @@ async function goOnline(asHost) {
     if (S.screen === 'lobby' && S.net) $('roomLine').textContent = netStatusLine();
     else if (!S.net) { clearInterval(S._lobbyTick); S._lobbyTick = null; }
   }, 1500);
-  S.net.onPeers = () => { if (S.screen === 'lobby') renderLobby(); };
+  S.netBots = [];
+  S.net.onPeers = () => {
+    if (S.screen === 'lobby') renderLobby();
+    // late joiners need the host's bot roster
+    if (S.net && S.net.isHost && S.netBots.length) S.net.send('bots', { list: S.netBots });
+  };
   S.net.onMsg = (t, p, from) => {
     if (t === 'mode') { S.mode = p.mode; if (S.screen === 'lobby') renderLobby(); }
+    else if (t === 'bots') { S.netBots = p.list || []; if (S.screen === 'lobby') renderLobby(); }
     else if (t === 'turns') { S.boardTurns = p.t; if (S.screen === 'lobby') renderLobby(); }
     else if (t === 'start') { if (p.turns) S.boardTurns = p.turns; launch(p.mode, p.seed, true); }
     else if (t === 'next' && S.gauntlet) nextRound(true);
