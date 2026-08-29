@@ -22,6 +22,32 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 26) — tutorial pause + THE turn-desync fix
+- **Tutorial pauses for real**: update() returns immediately while tut != null
+  (only tt + the card's buttons tick). Was previously "visual only" and bots
+  rolled/turns advanced underneath — Sam caught it. Remote acts queue and
+  replay in order on dismiss. Camera (camX/camY/zoom) is now seeded in the
+  CONSTRUCTOR — without it the paused first frames hit a non-finite
+  createLinearGradient crash. `if (!isFinite(this.zoom))` guards re-init.
+- **Turn desync root cause FOUND**: 'pinata2' force-applying (6s failsafe)
+  BEFORE the pinata overlay existed → applyPinata couldn't set o.reveal →
+  `if (o.reveal && o.t > 2.2)` never fired → that client's turn NEVER ended
+  → playerIdx diverged permanently ("waiting on you" both ways). Fixes:
+  1. applyPinata stashes _pendReveal; handleOverlay picks it up on open.
+  2. Pinata overlay watchdog: o.t > 8 → close + endPlayerTurn.
+  3. **Authoritative heartbeat** (the general cure): net-host sends
+     {a:'sync', d:{turn, playerIdx, ps:[{id,node,coins,cos,items,shield}]}}
+     every 1.5s. queueAct already applies 'sync' immediately (never queued).
+     applySync: if turn/playerIdx disagree for 2 consecutive syncs AND the
+     client isn't mid-animation (stepping/move/warping/dicing) → snap all
+     state, CLEAR this.rq (stale acts are superseded), startTurnPlayer().
+- Verified: 20s of frames with tutorial up = zero state change, resumes on
+  dismiss; forced playerIdx/turn divergence between two simulated boards
+  self-heals in ~3s; full 8-turn 2-client game byte-identical, 0 mismatched
+  samples. Two-board harness (createBoard x2 with cross-wired net.send +
+  queueAct pump) is the way to test sync — keep using it.
+- Build 29, deployed 8277b85.
+
 ## Session 2026-08-28 (round 25) — online bots, trackpad swipe, free movement, items, deck, zoom
 - **Online bots**: S.netBots (host-owned array) + new 'bots' net message.
   Host adds/renames(inline ✏️)/removes; broadcast on every change AND on
