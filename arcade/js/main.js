@@ -1,24 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=31';
-import * as audio from './audio.js?v=31';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=31';
-import { Net, makeRoomCode } from './net.js?v=31';
-import tunnel from './games/tunnel.js?v=31';
-import stack from './games/stack.js?v=31';
-import crown from './games/crown.js?v=31';
-import brain from './games/brain.js?v=31';
-import blast from './games/blast.js?v=31';
-import food from './games/food.js?v=31';
-import homerun from './games/homerun.js?v=31';
-import trivia from './games/trivia.js?v=31';
-import ghost from './games/ghost.js?v=31';
-import greed from './games/greed.js?v=31';
-import lava from './games/lava.js?v=31';
-import rush from './games/rush.js?v=31';
-import { createBoard } from './board.js?v=31';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=31';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=32';
+import * as audio from './audio.js?v=32';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=32';
+import { Net, makeRoomCode } from './net.js?v=32';
+import tunnel from './games/tunnel.js?v=32';
+import stack from './games/stack.js?v=32';
+import crown from './games/crown.js?v=32';
+import brain from './games/brain.js?v=32';
+import blast from './games/blast.js?v=32';
+import food from './games/food.js?v=32';
+import homerun from './games/homerun.js?v=32';
+import trivia from './games/trivia.js?v=32';
+import ghost from './games/ghost.js?v=32';
+import greed from './games/greed.js?v=32';
+import lava from './games/lava.js?v=32';
+import rush from './games/rush.js?v=32';
+import { createBoard } from './board.js?v=32';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=32';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -37,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 31;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 32;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };

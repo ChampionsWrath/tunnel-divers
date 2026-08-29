@@ -2,7 +2,7 @@
 // "GET TO GREEN!" — scramble (and shove) onto the safe color before everything
 // else sinks. Safe tiles get scarcer every round. Last diver standing wins.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverTop } from '../character.js?v=31';
+import { drawDiverTop } from '../character.js?v=32';
 
 const COLS = 5, ROWS = 4, MAX_ROUNDS = 14;
 const ACC = 2300, DRAG = 3.0, VMAX = 620, DASH_CD = 1.2, PR = 20;
@@ -58,7 +58,37 @@ class LavaGame {
     this.round = 0; this.elim = [];
     this.pops = []; this.tt = 0; this.shake = 0;
     this.phase = 'show'; this.phaseT = 0;
+    // ONLINE: one shared arena — your human is yours, bots run on the net-host,
+    // everyone else streams in via 'pos' (this was missing: each phone used to
+    // run its own private lava game)
+    this.online = !!ctx.net && !this.practice;
+    this.host = !this.online || ctx.net.isHost;
+    if (ctx.onNet) ctx.onNet((t, p) => this.onNet(t, p));
+    this.netAcc = 0;
     this.newRound();
+  }
+  onNet(t, p) {
+    if (t !== 'g') return;
+    if (p.k === 'pos') {
+      const q = this.ps.find(z => z.id === p.id);
+      if (q && !(q.local && !q.bot)) { q.nx = p.x; q.ny = p.y; q.vx = p.vx; q.vy = p.vy; }
+    } else if (p.k === 'dash') {
+      const q = this.ps.find(z => z.id === p.id);
+      if (q) { q.dashT = 0.3; this.ctx.audio.sfx.dash(); }
+    } else if (p.k === 'out') {
+      const q = this.ps.find(z => z.id === p.id);
+      if (q && q.alive) this.eliminate(q);
+    } else if (p.k === 'res') {              // host's authoritative placements
+      if (this.ended) return;
+      this.ended = true; this.done = true; this._rowsLocal = null;
+      this.ctx.end(p.rows);
+    }
+  }
+  eliminate(p) {
+    if (!p.alive) return;
+    p.alive = false; this.elim.push(p);
+    this.ctx.audio.sfx.death();
+    this.pop(p.name + ' fell in!', p.color);
   }
   matches(t) {
     const s = this.spec;
@@ -114,14 +144,19 @@ class LavaGame {
     this.ctx.audio.sfx.zone();
     const popCol = keys.includes('col') ? TCOLS[this.spec.col][0] : '#ffeccf';
     this.pops.push({ txt: 'GET TO ' + this.targetLabel() + '!', col: popCol, t: 0, dur: 1.4, big: true });
-    // bots pick a target safe tile (with reaction lag + occasional blunder);
-    // multi-attribute rounds slow everyone's reaction — bots included, to stay fair
-    for (const p of this.ps) if (p.bot && p.alive) {
-      p.react = 0.3 + (1 - p.skill) * 0.9 + this.rng() * 0.4 + (keys.length - 1) * 0.45;
+    // bots pick a target safe tile (with reaction lag + occasional blunder).
+    // ONLINE LOCKSTEP: draw the SAME number of rng values per bot regardless of
+    // alive-state — clients can briefly disagree about who's alive, and a
+    // diverged rng stream would give every phone a different board layout.
+    for (const p of this.ps) {
+      if (!p.bot) continue;
+      const rA = this.rng(), rB = this.rng(), rC = this.rng();
+      if (!p.alive) continue;
+      p.react = 0.3 + (1 - p.skill) * 0.9 + rA * 0.4 + (keys.length - 1) * 0.45;
       const safes = this.tiles.map((t, i) => this.matches(t) ? i : -1).filter(i => i >= 0);
-      const blunder = this.rng() > 0.82 + p.skill * 0.15;
+      const blunder = rB > 0.82 + p.skill * 0.15;
       const pool = blunder ? this.tiles.map((_, i) => i) : safes;
-      p.target = pool[Math.floor(this.rng() * pool.length)];
+      p.target = pool[Math.floor(rC * pool.length)];
     }
   }
   tileCenter(i) { return [(i % COLS + 0.5) / COLS, (Math.floor(i / COLS) + 0.5) / ROWS]; }
@@ -143,7 +178,16 @@ class LavaGame {
       if (p.local && !p.bot) {
         const inp = this.ctx.input(p.slot, rdt);
         p.vx += inp.x * ACC * rdt; p.vy += inp.y * ACC * rdt;
-        if (inp.act && p.dashCd <= 0) this.doDash(p);
+        if (inp.act && p.dashCd <= 0) {
+          this.doDash(p);
+          if (this.online) this.ctx.net.send('g', { k: 'dash', id: p.id });
+        }
+      } else if (this.online && !((p.bot && this.host))) {
+        // remote human, or a bot mirrored from the host: follow the stream
+        if (p.nx != null) { p.x = lerp(p.x, p.nx, Math.min(1, rdt * 10)); p.y = lerp(p.y, p.ny, Math.min(1, rdt * 10)); }
+        p.x = clamp(p.x + p.vx * rdt / 900, 0.03, 0.97);
+        p.y = clamp(p.y + p.vy * rdt / 900, 0.04, 0.96);
+        continue;
       } else if (p.bot) {
         p.react -= rdt;
         if (p.react <= 0 && p.target != null) {
@@ -189,13 +233,16 @@ class LavaGame {
         this.judged = true;
         for (const p of this.ps) {
           if (!p.alive) continue;
+          // each entity is judged by exactly ONE client: your own human by you,
+          // bots by the net-host — the verdict travels as an 'out' broadcast
+          const iJudge = !this.online || (p.local && !p.bot) || (p.bot && this.host);
+          if (!iJudge) continue;
           const ti = this.tileAt(p.x, p.y);
           if (ti < 0 || !this.matches(this.tiles[ti])) {
             if (this.practice) { p.x = 0.5; p.y = 0.5; p.vx = p.vy = 0; this.pop('SPLASH! (practice — back you go)', '#ff8a5c'); }
             else {
-              p.alive = false; this.elim.push(p);
-              this.ctx.audio.sfx.death();
-              this.pop(p.name + ' fell in!', p.color);
+              this.eliminate(p);
+              if (this.online) this.ctx.net.send('g', { k: 'out', id: p.id });
             }
           }
         }
@@ -206,6 +253,26 @@ class LavaGame {
         const alive = this.ps.filter(p => p.alive);
         if (!this.practice && (alive.length <= 1 || this.round >= MAX_ROUNDS)) this.finish();
         else this.newRound();
+      }
+    }
+    // waiting on the host's placements? fall back to ours if they never come
+    if (this._rowsLocal) {
+      this._resWait += rdt;
+      if (this._resWait > 4 && !this.ended) {
+        this.ended = true;
+        const r = this._rowsLocal; this._rowsLocal = null;
+        this.ctx.end(r);
+      }
+    }
+    // stream positions: my human every beat; the host also streams every bot
+    if (this.online) {
+      this.netAcc += rdt;
+      if (this.netAcc > 0.08) {
+        this.netAcc = 0;
+        const me = this.ps.find(p => p.local && !p.bot);
+        if (me && me.alive) this.ctx.net.send('g', { k: 'pos', id: me.id, x: me.x, y: me.y, vx: me.vx, vy: me.vy });
+        if (this.host) for (const p of this.ps)
+          if (p.bot && p.alive) this.ctx.net.send('g', { k: 'pos', id: p.id, x: p.x, y: p.y, vx: p.vx, vy: p.vy });
       }
     }
     this.ctx.audio.setMusicIntensity(0.45 + Math.min(0.4, this.round * 0.04));
@@ -219,11 +286,17 @@ class LavaGame {
     if (this.done) return; this.done = true;
     const alive = this.ps.filter(p => p.alive);
     const order = [...alive, ...[...this.elim].reverse()];
-    this.ctx.end(order.map((p, i) => ({
+    const rows = order.map((p, i) => ({
       id: p.id, score: p.alive ? order.length : order.length - i,
       label: p.alive ? 'survived ' + this.round + ' rounds' : 'melted',
       name: p.name, color: p.color, isFill: p.isFill,
-    })));
+    }));
+    // ONLINE: simultaneous splashes can resolve in a different order per phone —
+    // the HOST's placements are the truth, everyone else waits for them
+    if (this.online && !this.host) { this._rowsLocal = rows; this._resWait = 0; return; }
+    if (this.ended) return; this.ended = true;
+    if (this.online) this.ctx.net.send('g', { k: 'res', rows });
+    this.ctx.end(rows);
   }
 
   render() {

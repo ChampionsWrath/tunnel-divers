@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=31';
+import { drawDiverTop, drawDiverStand } from './character.js?v=32';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -242,7 +242,15 @@ class Board {
       if (this._seen[msg.s] >= msg.n) return;
       this._seen[msg.s] = msg.n;
     }
-    if (msg.a === 'rw' || msg.a === 'sync') { this.applyAct(msg, true); return; }  // board may be stashed (mid-minigame) — update() isn't running
+    if (msg.a === 'rw') { this.applyAct(msg, true); return; }  // board may be stashed (mid-minigame) — update() isn't running
+    if (msg.a === 'sync') {
+      // NEVER apply immediately: a board that is paused (tutorial) or stashed
+      // (mid-minigame) legitimately lags the host, and instant application
+      // made it snap-loop "resyncing" over and over. Keep only the LATEST
+      // snapshot; update() processes it when the board is actually live.
+      this._pendingSync = msg.d;
+      return;
+    }
     this.rq.push({ msg, t: 0 });
   }
   canApply(a) {
@@ -650,6 +658,7 @@ class Board {
     }
     this.tt += rdt; this.stateT += rdt; this.bannerT -= rdt;
     this.drainQueue(rdt);
+    if (this._pendingSync) { const d0 = this._pendingSync; this._pendingSync = null; this.applySync(d0); }
     // host heartbeat: whose turn it really is (see applySync)
     if (this.isNetHost && this.ctx.net) {
       this._syncAcc = (this._syncAcc || 0) + rdt;
