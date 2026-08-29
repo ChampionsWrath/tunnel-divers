@@ -22,6 +22,31 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 27) — "walking forever on her screen"
+Sam's turn looked normal on his phone; on his wife's, his diver walked
+endlessly. THREE compounding causes:
+1. **DUPLICATE ACTS** (the trigger). net.js sends over WebRTC AND publishes
+   to the nostr relay when `needsRelay` (which can be spuriously true — the
+   relaySeen check). A second copy of 'dest' re-enters doDest and RESTARTS
+   the walk mid-stride, repeatedly. FIX: every broadcast carries {n: seq,
+   s: selfId}; queueAct drops `_seen[s] >= n`. ALL 'bd' sends now go through
+   netSend() (act/mg/rw/sync) so nothing bypasses numbering.
+2. **UNBOUNDED WALK**: doDest now filters unknown nodes + caps path at 12 +
+   handles empty path; beginMove clamps steps ≤12; 'stepping' has a 9s
+   watchdog (this.moveStart vs this.tt) that force-lands.
+3. **HEARTBEAT VETOED ITSELF**: applySync returned early whenever state was
+   stepping/move/warping/dicing — exactly the stuck state. Now animations get
+   a GRACE (4 beats ≈6s) instead of a veto: `if (this._syncBad < (busy ? 4 : 2)) return;`
+- Verified: replayed identical act = no effect; guest jammed into an endless
+  walk self-heals and re-agrees; 35%-duplicate-delivery 8-turn 2-client game
+  byte-identical; worst transient disagreement 4.4s (animation lag, always
+  resolves — NOT a stall; don't chase it).
+- Build 30, deployed aff3fa5.
+- NOTE for future sync bugs: the two-board harness + a duplicating send() is
+  the reproduction tool. Also consider that net.js may double-deliver ANY
+  message type — main.js 'start'/'ready'/'bots' are NOT sequence-deduped yet
+  (a duplicate 'start' would create a second board). Candidate next hardening.
+
 ## Session 2026-08-28 (round 26) — tutorial pause + THE turn-desync fix
 - **Tutorial pauses for real**: update() returns immediately while tut != null
   (only tt + the card's buttons tick). Was previously "visual only" and bots
