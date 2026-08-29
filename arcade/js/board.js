@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=29';
+import { drawDiverTop, drawDiverStand } from './character.js?v=30';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -218,16 +218,30 @@ class Board {
   pop(txt, col, size) { this.pops.push({ txt, col: col || '#ffd23f', t: 0, dur: 1.3, size: size || 22 }); }
   showBanner(txt, col, dur) { this.banner = { txt, col: col || '#ffd23f' }; this.bannerT = dur || 1.5; }
 
-  /* -------- every mutation flows through act() so online mirrors cleanly -------- */
+  /* -------- every mutation flows through act() so online mirrors cleanly --------
+     Each broadcast carries a per-sender sequence number; receivers drop repeats.
+     Both transports (direct WebRTC and the nostr relay fallback) can deliver the
+     same act, and applying a 'dest' twice restarted a walk mid-stride — which is
+     how one phone ended up walking forever while the mover's looked normal. */
+  netSend(a, d) {
+    if (!this.ctx.net) return;
+    this._seq = (this._seq || 0) + 1;
+    this.ctx.net.send('bd', { a, d, n: this._seq, s: this.ctx.net.selfId || 'me' });
+  }
   act(a, d) {
     this.applyAct({ a, d }, false);
-    if (this.ctx.net) this.ctx.net.send('bd', { a, d });
+    this.netSend(a, d);
   }
   /* Remote acts must NEVER be dropped — a lagging client (throttled rAF, backgrounded
      phone, latency spike) receives the mover's acts "early", while its own state machine
      is still animating the previous phase. Acts queue here and apply once the local
      machine reaches the state each act belongs to; a lost act = permanent desync. */
   queueAct(msg) {
+    if (msg.s && msg.n) {                       // drop duplicates from either transport
+      this._seen = this._seen || {};
+      if (this._seen[msg.s] >= msg.n) return;
+      this._seen[msg.s] = msg.n;
+    }
     if (msg.a === 'rw' || msg.a === 'sync') { this.applyAct(msg, true); return; }  // board may be stashed (mid-minigame) — update() isn't running
     this.rq.push({ msg, t: 0 });
   }
@@ -306,7 +320,8 @@ class Board {
   }
   beginMove(steps, dir) {
     this.moveQ = []; this.moveDir = dir;
-    this.state = 'move'; this.moveSteps = steps; this.moveT = 0;
+    this.state = 'move'; this.moveSteps = Math.min(steps, 12); this.moveT = 0;
+    this.moveStart = this.tt;
     this.advanceStep();
   }
   /* FREE MOVEMENT: every destination exactly N steps away, any direction,
@@ -331,8 +346,11 @@ class Board {
   }
   doDest(path) {
     this.destOptions = null;
-    this.forcedPath = [...path];
-    this.moveDir = 1; this.state = 'move'; this.moveSteps = path.length; this.moveT = 0;
+    const safe = (path || []).filter(n => this.map[n]).slice(0, 12);
+    this.forcedPath = [...safe];
+    this.moveDir = 1; this.state = 'move'; this.moveSteps = safe.length; this.moveT = 0;
+    this.moveStart = this.tt;
+    if (!safe.length) { this.landOn(); return; }
     this.advanceStep();
   }
   advanceStep() {
@@ -534,7 +552,7 @@ class Board {
       const gid = this.mgDeck.pop();
       const seed = (this.ctx.seed ^ (this.turn * 7919)) >>> 0;
       this.pendingMg = { gid, seed };
-      if (this.ctx.net) this.ctx.net.send('bd', { a: 'mg', d: { gid, seed } });
+      this.netSend('mg', { gid, seed });
     }
   }
   launchMg(gid, seed, remote) { this.pendingMg = { gid, seed }; if (this.state !== 'mgIntro') { this.state = 'mgIntro'; this.stateT = 0; } }
@@ -551,7 +569,7 @@ class Board {
       }
       const rows = resultsArray.filter(r => this.players.some(q => q.id === r.playerId));
       this.applyRewards(list, rows);
-      if (this.ctx.net) this.ctx.net.send('bd', { a: 'rw', d: { list, rows } });
+      this.netSend('rw', { list, rows });
     }
     // non-hosts wait for the 'rw' event (already handled in applyAct)
   }
@@ -592,10 +610,12 @@ class Board {
   applySync(d) {
     const agree = d.turn === this.turn && d.playerIdx === this.playerIdx;
     if (agree) { this._syncBad = 0; return; }
-    // don't fight a local animation that's about to resolve on its own
-    const busy = ['stepping', 'move', 'warping', 'dicing'].includes(this.state);
     this._syncBad = (this._syncBad || 0) + 1;
-    if (busy || this._syncBad < 2) return;
+    // A local animation gets a couple of beats to resolve on its own — but it
+    // does NOT get to veto forever: a walk that never ends is exactly the case
+    // that stranded one phone while the mover's looked fine.
+    const busy = ['stepping', 'move', 'warping', 'dicing'].includes(this.state);
+    if (this._syncBad < (busy ? 4 : 2)) return;
     this._syncBad = 0;
     this.turn = d.turn; this.playerIdx = d.playerIdx;
     for (const row of d.ps) {
@@ -635,7 +655,7 @@ class Board {
       this._syncAcc = (this._syncAcc || 0) + rdt;
       if (this._syncAcc > 1.5) {
         this._syncAcc = 0;
-        this.ctx.net.send('bd', { a: 'sync', d: this.syncPayload() });
+        this.netSend('sync', this.syncPayload());
       }
     }
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
@@ -789,6 +809,10 @@ class Board {
         break;
       }
       case 'stepping': {
+        // watchdog: a walk can never outlive a sane duration (12 steps ≈ 4s)
+        if (this.moveStart != null && this.tt - this.moveStart > 9) {
+          this.moveSteps = 0; this.forcedPath = null; this.landOn(); break;
+        }
         this.moveT += rdt;
         const p2 = this.cur(), tn = this.map[p2.node];
         const f = Math.min(1, this.moveT / 0.34);
