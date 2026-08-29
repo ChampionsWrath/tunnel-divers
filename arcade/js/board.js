@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=28';
+import { drawDiverTop, drawDiverStand } from './character.js?v=29';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -182,7 +182,10 @@ class Board {
     this.rq = [];   // remote acts wait here until the local state machine can accept them
     this.mapView = false;
     this.dust = []; this.squashT = 0; this.confetti = []; this._confettiKey = null;
-    this.tut = 0;   // optional how-to cards over the opening; SKIP dismisses (visual only, never blocks sync)
+    this.tut = 0;   // optional how-to cards; the board is PAUSED while one is up
+    // camera seeded here so the very first frames render even while paused
+    this.camX = 54; this.camY = 37;
+    this.zoom = Math.min(ctx.dim.W / 120, (ctx.dim.H * 0.68) / 80) || 10;
     this.decor = this.buildDecor();
     this.showBanner('🎪 THE CHAOTIC BOARDWALK 🎪', '#ffd23f', 2.2);
   }
@@ -272,6 +275,7 @@ class Board {
       case 'pinata2': this.applyPinata(d.c); break;
       case 'mg': if (remote) this.launchMg(d.gid, d.seed, true); break;
       case 'rw': if (remote) this.applyRewards(d.list, d.rows); break;
+      case 'sync': if (remote) this.applySync(d); break;
     }
   }
 
@@ -459,6 +463,7 @@ class Board {
     const p = this.cur(), c = cosmetic(cid);
     p.cosmetics.push(cid);
     if (this.overlay && this.overlay.kind === 'pinata') this.overlay.reveal = cid;
+    else this._pendReveal = cid;   // overlay not open yet — hand it over when it is
     this.pop('🪅 ' + c.icon + ' ' + c.name + ' (+' + c.value + 'pts)!', c.tier === 'legendary' ? '#ffd23f' : '#e08bd0', 24);
     this.ctx.audio.sfx.win();
   }
@@ -570,11 +575,69 @@ class Board {
     this.ctx.end(rows);
   }
 
+  /* -------- turn-state safety net --------
+     The board is act-mirrored, but any single dropped/mistimed act would
+     otherwise strand one phone on the wrong player forever ("waiting on you"
+     vs "waiting on her"). The net-host publishes whose turn it actually is a
+     few times a second; a client that disagrees for ~3s snaps to it. */
+  syncPayload() {
+    return {
+      turn: this.turn, playerIdx: this.playerIdx,
+      ps: this.players.map(p => ({
+        id: p.id, node: p.node, coins: p.coins,
+        cos: [...p.cosmetics], items: [...p.items], shield: !!p.shield,
+      })),
+    };
+  }
+  applySync(d) {
+    const agree = d.turn === this.turn && d.playerIdx === this.playerIdx;
+    if (agree) { this._syncBad = 0; return; }
+    // don't fight a local animation that's about to resolve on its own
+    const busy = ['stepping', 'move', 'warping', 'dicing'].includes(this.state);
+    this._syncBad = (this._syncBad || 0) + 1;
+    if (busy || this._syncBad < 2) return;
+    this._syncBad = 0;
+    this.turn = d.turn; this.playerIdx = d.playerIdx;
+    for (const row of d.ps) {
+      const p = this.players.find(q => q.id === row.id);
+      if (!p) continue;
+      p.node = row.node; p.coins = row.coins;
+      p.cosmetics = [...row.cos]; p.items = [...row.items]; p.shield = row.shield;
+      p.ax = this.map[p.node].x; p.ay = this.map[p.node].y;
+    }
+    this.overlay = null; this.destOptions = null; this.forcedPath = null; this.dice = null;
+    this.rq.length = 0;   // queued acts are superseded by this snapshot
+    this.pop('… resyncing', '#93a0bd');
+    this.startTurnPlayer();
+  }
+
   /* ---------------- update ---------------- */
   update(rdt) {
     if (!this.players.length) return;   // pathological empty board — never crashloop
+    // TUTORIAL = a real pause. Nothing rolls, moves, or advances while a card
+    // is up; remote acts stay queued (they replay in order on dismiss), so the
+    // board is exactly where you left it and still in sync.
+    if (this.tut != null) {
+      this.tt += rdt;
+      const hit = this.hitButton(this.clicks);
+      if (hit) {
+        this.ctx.audio.sfx.ui();
+        if (hit.id === 'tutN') { this.tut++; if (this.tut >= 4) this.tut = null; }
+        else if (hit.id === 'tutS') this.tut = null;
+      }
+      this.clicks.length = 0;
+      return;
+    }
     this.tt += rdt; this.stateT += rdt; this.bannerT -= rdt;
     this.drainQueue(rdt);
+    // host heartbeat: whose turn it really is (see applySync)
+    if (this.isNetHost && this.ctx.net) {
+      this._syncAcc = (this._syncAcc || 0) + rdt;
+      if (this._syncAcc > 1.5) {
+        this._syncAcc = 0;
+        this.ctx.net.send('bd', { a: 'sync', d: this.syncPayload() });
+      }
+    }
     // Mario Party camera: locked to whoever's turn it is; splash shows the whole park
     const { W, H } = this.ctx.dim;
     const Zfit = Math.min(W / 120, (H * 0.68) / 80), Zgame = Math.min(W, H) / 34;
@@ -583,7 +646,7 @@ class Board {
     // the whole-park view so zooming out always shows you more of the board
     const uz = this.userZoom || 1;
     const zoomT = clamp((wide ? Zfit : Zgame) * uz, Zfit * 0.55, Zgame * 2);
-    if (this.zoom === undefined) { this.zoom = Zfit; this.camX = 54; this.camY = 37; }
+    if (!isFinite(this.zoom)) { this.zoom = Zfit; this.camX = 54; this.camY = 37; }
     this.zoom += (zoomT - this.zoom) * Math.min(1, rdt * 2.2);
     const wideF = wide ? 1 : clamp((1 - uz) / 0.35, 0, 1);   // pan toward park center as you zoom out
     const me = this.cur();
@@ -625,17 +688,6 @@ class Board {
         this.mapView = !this.mapView; this.ctx.audio.sfx.ui();
         clicks.length = 0;
       }
-    }
-    // tutorial cards swallow taps while open — the game itself keeps running
-    // underneath (remote acts still mirror; your own turn just waits for you)
-    if (this.tut != null) {
-      const hit = this.hitButton(clicks);
-      if (hit) {
-        this.ctx.audio.sfx.ui();
-        if (hit.id === 'tutN') { this.tut++; if (this.tut >= 4) this.tut = null; }
-        else if (hit.id === 'tutS') this.tut = null;
-      }
-      clicks.length = 0;
     }
     const inp = this.myTurn() ? this.ctx.input(p.slot, rdt) : { act: false };
     // overlays (shop/mascot/piñata) pause whatever else is happening — including
@@ -834,7 +886,10 @@ class Board {
         const c = opts[Math.floor(this.rng() * opts.length)];
         this.act('pinata2', { c: c.id });
       }
+      // a reveal that arrived BEFORE this overlay existed still lands here
+      if (!o.reveal && this._pendReveal) { o.reveal = this._pendReveal; this._pendReveal = null; }
       if (o.reveal && o.t > 2.2) { this.overlay = null; this.endPlayerTurn(0.4); }
+      else if (o.t > 8) { this.overlay = null; this.endPlayerTurn(0.3); }   // watchdog: never strand a turn
     } else if (o.kind === 'mascot') {
       if (p.bot && auth && (this.botT -= rdt) <= 0) {
         const bet = p.coins >= 8 && this.rng() < 0.55;
