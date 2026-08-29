@@ -22,6 +22,33 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 29) — lava networking + resync churn fix
+- **FLOOR IS LAVA HAD NO NET CODE AT ALL** (grep 'ctx.net|onNet' per game:
+  lava was the only 0). Both phones ran private arenas. Now mirrors the
+  crown.js pattern:
+  * this.online / this.host; onNet handles 'pos' (~12Hz stream, lerp 10/s),
+    'dash', 'out' (elimination), 'res' (authoritative placements).
+  * Remote humans AND host-run bots are followed via nx/ny; only your own
+    human takes local input. Judging: each diver judged by exactly one
+    client (own human by you, bots by host) → broadcast 'out'.
+  * finish(): non-host stores _rowsLocal and WAITS for the host's 'res'
+    (4s fallback) — simultaneous splashes ordered differently per phone
+    otherwise (observed: SAM/WIFEY swapped 3rd/4th).
+  * newRound() bot rolls now draw a FIXED 3 rng values per bot regardless of
+    alive-state — otherwise the shared rng stream diverges once clients
+    briefly disagree on who's alive, giving each phone a different layout.
+- **"stuck resyncing"**: queueAct applied 'sync' IMMEDIATELY, including to
+  boards that are paused (tutorial) or stashed (mid-minigame) — those always
+  disagree with the host, so they snapped repeatedly. Now the latest snapshot
+  is stored in _pendingSync and consumed at the top of update() (live boards
+  only). Verified: 25s paused vs a playing host = 0 resyncs, then exactly 1
+  clean catch-up after dismiss.
+- Two-instance minigame harness (cross-wired net.send + onNet handler list)
+  is the way to test any minigame's sync — reuse it.
+- Build 32, deployed 6f17d7b.
+- ⚠ AUDIT NOTE: other games have net code but were never two-client tested
+  (stack/greed/tunnel have only 3 net refs each — worth a harness pass).
+
 ## Session 2026-08-28 (round 28) — pause menu, podium, blast streak
 - **Pause menu** (#pauseMenu in index.html, wired in main.js): ✕ opens it
   instead of instantly quitting. RESUME / tilt-swipe chips / volume+music
