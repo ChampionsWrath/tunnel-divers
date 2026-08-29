@@ -594,9 +594,9 @@ export function drawDiverStand(g, o) {
     g.fillStyle = '#f5c518';               // tail
     g.beginPath(); g.moveTo(14.5, 3); g.quadraticCurveTo(19, 0, 17.5, 6); g.closePath(); g.fill(); g.stroke();
   }
-  // arms with skin HANDS (cheer = hands up) — sleeves match the shirt
+  // arms with skin HANDS (cheer = hands up, sad = drooped) — sleeves match the shirt
   g.strokeStyle = shadeShirt(shirt, 0.8); g.lineWidth = 5.5;
-  const armY = o.mood === 'cheer' ? -14 : 6;
+  const armY = o.mood === 'cheer' ? -14 : o.mood === 'sad' ? 10 : 6;
   for (const sd of [-1, 1]) {
     const hx2 = sd * 14, hy2 = armY + Math.sin((o.t || 0) * 2.6) * 1.5 * sd;
     g.beginPath(); g.moveTo(sd * 9, -3); g.lineTo(hx2, hy2); g.stroke();
@@ -658,8 +658,20 @@ export function drawDiverStand(g, o) {
     for (const sx of [-3, 0, 3]) { g.beginPath(); g.arc(sx, -15.2, 0.55, 0, TAU); g.fill(); }
   } else {
     g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
-    g.beginPath(); g.arc(0, -13, 2.8, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+    if (o.mood === 'sad') {                    // frown — the podium loser look
+      g.beginPath(); g.arc(0, -10.6, 2.8, 1.15 * Math.PI, 1.85 * Math.PI); g.stroke();
+    } else {
+      g.beginPath(); g.arc(0, -13, 2.8, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+    }
     drawFaceHairFront(g, ward.face, 0, -11.5, 1, skinV, ward.faceCol || DEF_FACE_COL);
+  }
+  if (o.tear) {                                // a single tear rolls down the cheek
+    const tf = ((o.t || 0) * 0.9) % 1;
+    const ty2 = -15 + tf * 5.5;
+    g.fillStyle = 'rgba(120,190,255,0.9)';
+    g.beginPath(); g.ellipse(-6.3, ty2, 1.0, 1.5, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.7)';
+    g.beginPath(); g.arc(-6.6, ty2 - 0.4, 0.35, 0, TAU); g.fill();
   }
   if (cos.includes('nose')) {
     g.fillStyle = '#e04040'; g.strokeStyle = OUTLINE; g.lineWidth = 1.5;

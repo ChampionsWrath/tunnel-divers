@@ -1,24 +1,24 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=30';
-import * as audio from './audio.js?v=30';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=30';
-import { Net, makeRoomCode } from './net.js?v=30';
-import tunnel from './games/tunnel.js?v=30';
-import stack from './games/stack.js?v=30';
-import crown from './games/crown.js?v=30';
-import brain from './games/brain.js?v=30';
-import blast from './games/blast.js?v=30';
-import food from './games/food.js?v=30';
-import homerun from './games/homerun.js?v=30';
-import trivia from './games/trivia.js?v=30';
-import ghost from './games/ghost.js?v=30';
-import greed from './games/greed.js?v=30';
-import lava from './games/lava.js?v=30';
-import rush from './games/rush.js?v=30';
-import { createBoard } from './board.js?v=30';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=30';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=31';
+import * as audio from './audio.js?v=31';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=31';
+import { Net, makeRoomCode } from './net.js?v=31';
+import tunnel from './games/tunnel.js?v=31';
+import stack from './games/stack.js?v=31';
+import crown from './games/crown.js?v=31';
+import brain from './games/brain.js?v=31';
+import blast from './games/blast.js?v=31';
+import food from './games/food.js?v=31';
+import homerun from './games/homerun.js?v=31';
+import trivia from './games/trivia.js?v=31';
+import ghost from './games/ghost.js?v=31';
+import greed from './games/greed.js?v=31';
+import lava from './games/lava.js?v=31';
+import rush from './games/rush.js?v=31';
+import { createBoard } from './board.js?v=31';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=31';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
 const MODES = [
@@ -37,7 +37,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 30;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 31;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -208,6 +208,7 @@ function show(scr) {
   const map = { home: 'scrHome', set: 'scrSet', lobby: 'scrLobby', results: 'scrResults', custom: 'scrCustom' };
   if (map[scr]) $(map[scr]).classList.add('show');
   $('btnQuit').style.display = scr === 'game' ? 'block' : 'none';
+  if (scr !== 'game' && $('pauseMenu')) $('pauseMenu').style.display = 'none';
 }
 
 /* ---------------- lobby ---------------- */
@@ -677,10 +678,30 @@ $('btnNext').addEventListener('click', () => {
   }
 });
 $('btnToLobby').addEventListener('click', () => { audio.sfx.ui(); S.gauntlet = null; show('lobby'); renderLobby(); });
+/* ✕ opens the PAUSE MENU — leaving is a deliberate second tap, never an
+   accident. Your game keeps running underneath (and for everyone else). */
+function syncPauseUI() {
+  $('pmTilt').classList.toggle('sel', ctl === 'tilt');
+  $('pmSwipe').classList.toggle('sel', ctl === 'swipe');
+  const v = audio.getVols();
+  $('pmVol').value = Math.round(v.masterVol * 100);
+  $('pmMus').value = Math.round(v.musVol * 100);
+}
 $('btnQuit').addEventListener('click', () => {
   audio.sfx.ui();
+  syncPauseUI();
+  $('pauseMenu').style.display = 'block';
+});
+$('pmResume').addEventListener('click', () => { audio.sfx.ui(); $('pauseMenu').style.display = 'none'; });
+$('pmTilt').addEventListener('click', () => { setCtl('tilt'); askTiltPerm(); syncPauseUI(); audio.sfx.ui(); });
+$('pmSwipe').addEventListener('click', () => { setCtl('swipe'); syncPauseUI(); audio.sfx.ui(); });
+$('pmVol').addEventListener('input', () => audio.setMasterVol($('pmVol').value / 100));
+$('pmMus').addEventListener('input', () => audio.setMusVol($('pmMus').value / 100));
+$('pmLeave').addEventListener('click', () => {
+  audio.sfx.ui();
+  $('pauseMenu').style.display = 'none';
   if (S.boardStash) { S.boardStash.dispose(); S.boardStash = null; }
-  if (S.boardObj) { S.boardObj = null; }
+  if (S.boardObj) { S.boardObj.dispose && S.boardObj.dispose(); S.boardObj = null; }
   if (S.inst) { S.inst.dispose(); S.inst = null; }
   S.gauntlet = null; S.pending = null; S.gameNet = null; S.countdown = 0;
   $('introPanel').style.display = 'none';

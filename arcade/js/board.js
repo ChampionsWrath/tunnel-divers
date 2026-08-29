@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=30';
+import { drawDiverTop, drawDiverStand } from './character.js?v=31';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -856,7 +856,7 @@ class Board {
         break;
       }
       case 'reward': {
-        if (this.stateT > 3) {
+        if (this.stateT > 4.5) {   // let the podium land
           this.mgLaunched = false; this.pendingMg = null;
           this.turn++;
           this.playerIdx = 0;
@@ -1648,21 +1648,82 @@ class Board {
       g.font = '900 22px system-ui'; g.fillStyle = '#ffd23f';
       g.fillText('🎲 MINIGAME TIME!', W / 2, cy);
     } else if (this.state === 'reward' && this.rewardRows) {
-      g.fillStyle = 'rgba(10,8,16,0.85)'; g.fillRect(W * 0.1, H * 0.2, W * 0.8, H * 0.5);
-      g.strokeStyle = '#ffd23f'; g.lineWidth = 3; g.strokeRect(W * 0.1, H * 0.2, W * 0.8, H * 0.5);
-      g.font = '900 20px system-ui'; g.fillStyle = '#ffd23f';
-      g.fillText('MINIGAME REWARDS', W / 2, H * 0.26);
-      g.font = '800 16px system-ui';
-      this.rewardRows.slice(0, 5).forEach((r, i) => {
-        const p2 = this.players.find(q => q.id === r.playerId);
-        if (!p2) return;
-        g.fillStyle = p2.color;
-        g.fillText((['🥇', '🥈', '🥉', '4.', '5.'][r.rank - 1] || '') + ' ' + p2.name + '  +' + r.coins + '🪙', W / 2, H * 0.32 + i * 26);
-      });
+      this.drawPodium(g, W, H);
     } else if (this.state === 'end') {
       g.font = '900 26px system-ui'; g.fillStyle = '#ffd23f';
       g.fillText('🏁 FINAL SCORES…', W / 2, H * 0.45);
     }
+  }
+  /* post-minigame PODIUM: a full-screen 2x2 — winner spotlit and jumping,
+     losers shadowed and frowning, dead last sheds a single tear */
+  drawPodium(g, W, H) {
+    const rows = [...this.rewardRows].sort((a, b) => a.rank - b.rank);
+    const safeTop = (this.ctx.dim.safeTop || 0);
+    const gridY = safeTop + 60, gridH = H - gridY - 116 - (this.ctx.dim.safeBottom || 0);
+    const cw = W / 2, chh = gridH / 2;
+    g.fillStyle = 'rgba(8,9,18,0.94)'; g.fillRect(0, 0, W, H);
+    g.font = '900 ' + Math.min(24, W * 0.055) + 'px system-ui'; g.textAlign = 'center';
+    g.lineWidth = 5; g.strokeStyle = 'rgba(10,8,4,0.9)';
+    g.strokeText('🏆 MINIGAME RESULTS', W / 2, safeTop + 40);
+    g.fillStyle = '#ffd23f'; g.fillText('🏆 MINIGAME RESULTS', W / 2, safeTop + 40);
+    const lastRank = rows[rows.length - 1] && rows[rows.length - 1].rank;
+    rows.slice(0, 4).forEach((r, i) => {
+      const p2 = this.players.find(q => q.id === r.playerId);
+      if (!p2) return;
+      const cx2 = (i % 2) * cw + cw / 2;
+      const cy2 = gridY + Math.floor(i / 2) * chh + chh / 2;
+      const win = r.rank === 1, worst = r.rank === lastRank && rows.length > 1 && !win;
+      // cell backdrop
+      g.fillStyle = win ? 'rgba(52,42,14,0.9)' : 'rgba(16,20,34,0.9)';
+      g.strokeStyle = win ? '#ffd23f' : '#2a3450'; g.lineWidth = win ? 3.5 : 2;
+      const pad2 = 8;
+      g.beginPath(); g.roundRect ? g.roundRect((i % 2) * cw + pad2, gridY + Math.floor(i / 2) * chh + pad2, cw - pad2 * 2, chh - pad2 * 2, 14)
+        : g.rect((i % 2) * cw + pad2, gridY + Math.floor(i / 2) * chh + pad2, cw - pad2 * 2, chh - pad2 * 2);
+      g.fill(); g.stroke();
+      const sc2 = Math.min(cw, chh) / 78;
+      if (win) {
+        // spotlight cone + glow
+        const lg2 = g.createRadialGradient(cx2, cy2 - chh * 0.1, 6, cx2, cy2, Math.min(cw, chh) * 0.62);
+        lg2.addColorStop(0, 'rgba(255,236,160,0.5)'); lg2.addColorStop(1, 'rgba(255,236,160,0)');
+        g.fillStyle = lg2;
+        g.beginPath(); g.arc(cx2, cy2, Math.min(cw, chh) * 0.62, 0, TAU); g.fill();
+        g.fillStyle = 'rgba(255,236,160,0.14)';
+        g.beginPath(); g.moveTo(cx2 - cw * 0.34, gridY + Math.floor(i / 2) * chh + 10);
+        g.lineTo(cx2 + cw * 0.34, gridY + Math.floor(i / 2) * chh + 10);
+        g.lineTo(cx2 + cw * 0.2, cy2 + chh * 0.34); g.lineTo(cx2 - cw * 0.2, cy2 + chh * 0.34);
+        g.closePath(); g.fill();
+      }
+      const jump = win ? -Math.abs(Math.sin(this.tt * 6)) * chh * 0.12 : 0;
+      drawDiverStand(g, {
+        x: cx2, y: cy2 - 10 * sc2 + jump, scale: sc2,
+        color: p2.color, skin: p2.skin, ward: p2.ward, cos: p2.cosmetics,
+        t: this.tt + i, mood: win ? 'cheer' : 'sad', tear: worst,
+      });
+      if (!win) {   // losers sit in shadow
+        g.fillStyle = 'rgba(6,7,13,0.42)';
+        g.fillRect((i % 2) * cw + pad2, gridY + Math.floor(i / 2) * chh + pad2, cw - pad2 * 2, chh - pad2 * 2);
+      }
+      // rank ribbon + name
+      g.textAlign = 'center';
+      g.font = '900 ' + Math.round(15 * Math.min(1.2, sc2)) + 'px system-ui';
+      const medal = ['🥇', '🥈', '🥉', '4th'][r.rank - 1] || r.rank + 'th';
+      g.fillStyle = win ? '#ffd23f' : '#93a0bd';
+      g.fillText(medal + ' ' + p2.name, cx2, cy2 + chh * 0.36);
+      g.fillStyle = win ? '#7dff6a' : '#ffeccf';
+      g.fillText('+' + r.coins + ' 🪙', cx2, cy2 + chh * 0.36 + 20);
+    });
+    // scoreboard strip along the bottom
+    const sy = gridY + gridH + 12;
+    g.fillStyle = 'rgba(16,22,36,0.92)'; g.strokeStyle = '#2a3450'; g.lineWidth = 2;
+    g.fillRect(W * 0.06, sy, W * 0.88, 88); g.strokeRect(W * 0.06, sy, W * 0.88, 88);
+    g.font = '800 12px system-ui'; g.fillStyle = '#93a0bd';
+    g.fillText('STANDINGS (coins + cosmetics)', W / 2, sy + 18);
+    const ranked = [...this.players].sort((a, b) => this.score(b) - this.score(a));
+    g.font = '800 13px system-ui';
+    ranked.forEach((p2, i) => {
+      g.fillStyle = p2.color;
+      g.fillText((i + 1) + '. ' + p2.name + ' — ' + this.score(p2) + '★', W / 2, sy + 38 + i * 16);
+    });
   }
   drawOverlay(g, W, H) {
     const o = this.overlay, p = this.cur(), mine = this.myTurn();

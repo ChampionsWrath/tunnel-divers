@@ -116,7 +116,7 @@ class BlastGame {
     // ---- run ----
     const { W, H } = this.ctx.dim, s = Math.min(W, H) / 700;
     this.runT += rdt; this.fireCd -= rdt;
-    if (this.comboT > 0) { this.comboT -= rdt; if (this.comboT <= 0) this.combo = 0; }
+    // (streak is no longer time-based — it breaks on a MISS or an escaped bottle)
     if (!this.practice) this.clock -= rdt;
     // spawn ramp: MP ramps with the round clock; solo ramps slowly with survival
     const ramp = this.practice ? 1 :
@@ -132,7 +132,15 @@ class BlastGame {
     for (let i = this.cans.length; i--;) {
       const c = this.cans[i];
       c.vy += 620 * s * rdt; c.x += c.vx * rdt; c.y += c.vy * rdt; c.rot += c.vr * rdt;
-      if (c.y > H + 60) this.cans.splice(i, 1);
+      if (c.y > H + 60) {
+        this.cans.splice(i, 1);
+        // a shootable bottle got away — the streak breaks (clock cans are
+        // bonuses, letting one drop costs nothing)
+        if (c.type !== 'clock' && c.vy > 0 && this.combo > 0 && !this.practice) {
+          this.combo = 0;
+          this.pop('💨 streak lost!', W / 2, H * 0.2, '#93a0bd', 18);
+        } else if (c.type !== 'clock' && this.combo > 0 && this.practice) this.combo = 0;
+      }
     }
     // shots
     if (this.clicks.length) {
@@ -145,6 +153,10 @@ class BlastGame {
         for (let i = 0; i < this.cans.length; i++) {
           const c = this.cans[i], d = Math.hypot(c.x - px, c.y - py);
           if (d < c.r + 20 * s && d < best) { best = d; hit = i; }
+        }
+        if (hit < 0 && this.combo > 0) {   // whiffed shot = streak over
+          this.combo = 0;
+          this.pop('MISS', px, py, '#93a0bd', 16);
         }
         if (hit >= 0) {
           const c = this.cans.splice(hit, 1)[0];
@@ -159,9 +171,9 @@ class BlastGame {
             this.ctx.audio.sfx.pow();
           } else {
             const pts = c.type === 'gold' ? 3 : 1;
-            this.combo++; this.comboT = 1.6;
+            this.combo++;
             this.score += pts;
-            this.pop('+' + pts + (this.combo > 2 ? '  x' + this.combo : ''), c.x, c.y, c.type === 'gold' ? '#ffd23f' : '#ffeccf', 20);
+            this.pop('+' + pts + (this.combo > 1 ? '  x' + this.combo : ''), c.x, c.y, c.type === 'gold' ? '#ffd23f' : '#ffeccf', 20);
             this.ctx.audio.sfx.coin(Math.min(12, this.combo * 2));
             if (this.solo) this.score += 0; // solo score is hits-based points too
           }
@@ -277,7 +289,7 @@ class BlastGame {
     // HUD
     g.textAlign = 'left'; g.font = '800 18px system-ui'; g.fillStyle = '#14100a';
     g.fillText('🥫 ' + this.score, 14, 30);
-    if (this.combo > 2) { g.fillStyle = '#a8523a'; g.fillText('x' + this.combo + ' combo', 14, 54); }
+    if (this.combo > 1) { g.fillStyle = '#a8523a'; g.fillText('x' + this.combo + ' streak', 14, 54); }
     g.textAlign = 'center'; g.font = '900 26px system-ui';
     if (this.practice) { g.fillStyle = '#2f6428'; g.fillText('PRACTICE', W / 2, 36); }
     else {

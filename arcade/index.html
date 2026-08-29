@@ -105,7 +105,28 @@
 </div>
 
 <!-- in-game chrome -->
-<button id="btnQuit" title="quit">✕</button>
+<button id="btnQuit" title="menu">✕</button>
+
+<!-- pause menu: YOUR menu only — the game keeps running for everyone else -->
+<div id="pauseMenu" style="display:none;position:fixed;inset:0;z-index:40;background:rgba(6,7,13,0.78);pointer-events:auto">
+  <div class="panel" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(340px,88vw)">
+    <h2>⏸ PAUSED</h2>
+    <div class="muted" style="text-align:center;margin-bottom:10px">(the game keeps going for other players)</div>
+    <div class="row"><button class="btn" id="pmResume">▶ RESUME</button></div>
+    <div class="secLbl" style="margin-top:12px">STEERING</div>
+    <div class="chips">
+      <button class="cchip" id="pmTilt">📱 TILT</button>
+      <button class="cchip" id="pmSwipe">👆 SWIPE</button>
+    </div>
+    <div class="secLbl" style="margin-top:8px">VOLUME</div>
+    <input type="range" id="pmVol" class="slider" min="0" max="100" step="1">
+    <div class="secLbl" style="margin-top:6px">MUSIC</div>
+    <input type="range" id="pmMus" class="slider" min="0" max="100" step="1">
+    <div class="row" style="margin-top:16px">
+      <button class="btn small ghostBtn" id="pmLeave" style="border-color:#e04040;color:#ff8a8a">🚪 LEAVE GAME</button>
+    </div>
+  </div>
+</div>
 
 <!-- how-to / ready-up card shown over the practice arena before every minigame -->
 <div id="introPanel">
