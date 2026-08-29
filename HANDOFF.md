@@ -22,6 +22,31 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 28) — pause menu, podium, blast streak
+- **Pause menu** (#pauseMenu in index.html, wired in main.js): ✕ opens it
+  instead of instantly quitting. RESUME / tilt-swipe chips / volume+music
+  sliders (pm* ids, reuse setCtl + audio.setMasterVol/setMusVol) / 🚪 LEAVE
+  (the old quit logic, now with boardObj.dispose()). Client-local only —
+  the game runs on underneath. show() auto-hides it off the game screen.
+- **Podium** (board.drawPodium, replaces the reward rows panel): full-screen
+  2x2 grid from rewardRows sorted by rank. Winner cell: gold border,
+  radial spotlight + light cone, jump anim (|sin|*chh*0.12), mood 'cheer'.
+  Losers: shadow overlay rgba(6,7,13,0.42) + mood 'sad'. Last rank (>1
+  player): tear:true. Medal + '+N 🪙' per cell, standings strip at bottom
+  (coins+cosmetics via this.score). Reward phase 3s→4.5s. character.js:
+  mood 'sad' = drooped arms (armY 10) + inverted mouth arc; o.tear = animated
+  blue drop at cheek (-6.3, cycling y).
+- **Blast streak REWRITTEN**: was timer-based (comboT 1.6s) → Sam saw it
+  "fail to drop" and "come back". Now: +1 per hit; RESET on whiffed shot
+  (MISS pop) and on any shootable bottle leaving the screen unshot
+  ('streak lost!', falling only, not clock cans, silent in practice). HUD
+  from x2, labeled 'streak'. comboT removed from update (init refs remain,
+  harmless). Verified hit→1, miss→0, hit→1, escape→0.
+- GOTCHA: localhost python server caches HARD in the pane browser — a new
+  index.html needs fetch(...,{cache:'reload'}) + location.href bust, force
+  navigate alone was NOT enough this round.
+- Build 31, deployed ae4c976. Podium screenshot sent to Sam.
+
 ## Session 2026-08-28 (round 27) — "walking forever on her screen"
 Sam's turn looked normal on his phone; on his wife's, his diver walked
 endlessly. THREE compounding causes:
