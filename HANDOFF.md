@@ -22,6 +22,40 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 25) — online bots, trackpad swipe, free movement, items, deck, zoom
+- **Online bots**: S.netBots (host-owned array) + new 'bots' net message.
+  Host adds/renames(inline ✏️)/removes; broadcast on every change AND on
+  onPeers (late joiners). lobbyPlayers appends them after the sorted humans
+  with local:true so the HOST's client runs their turns. Names are per-game
+  only (never persisted). btnAddBot now shows online for the host.
+- **Swipe rework (input.js)**: pad now tracks finger VELOCITY (dx/dt,
+  low-passed at ~22/s, deadband 25px/s, full at 650px/s) instead of a
+  drifting virtual-stick origin. Verified: |v|=1 while dragging, exactly 0
+  when the finger stops, instant reversal, diagonals fine. NOTE tests must
+  poll window.ARC.getInput (the module instance attachTouch bound) — a
+  fresh import() has its own dead state.
+- **Free movement**: computeDests(node, steps) does a non-backtracking walk
+  over next+prev → every space exactly N away, any direction. New state
+  'pickDest' (act 'dest' with the path) replaces forced forward walking;
+  bots/drunk pick randomly (authority-gated), humans tap a pin. forcedPath
+  drives advanceStep. Fork previews still apply to the walk.
+- **Items**: loaded (🎯 7c, pending 'loaded' → rollNow opens 'pickroll'
+  overlay, pv1..pv6 buttons) and mystery (🎁 25c, ITEMS.instant → doBuy
+  draws a cosmetic via act 'mbox', no inventory slot). Drunk = fate picks
+  the destination (forcedRandom).
+- **Minigame deck**: this.mgDeck shuffled from ctx.gameIds, popped per
+  round, reshuffled when empty (host-authoritative, still broadcast via
+  'mg'). Verified 26 rounds = 2 unique blocks of 12, 0 adjacent repeats.
+- **Map/zoom**: 'mapAny' corner button added in drawPhaseUI (all states),
+  handled at the top of update(). userZoom via pinch (2-pointer),
+  ctrl/⌘+click toggle, and wheel; zoomT = base*userZoom clamped, camera
+  lerps toward park center as you zoom out. Listeners added in the
+  constructor, removed in dispose().
+- ⚠ TEST GOTCHA: A.S.inst becomes the MINIGAME once one launches — drive
+  the board via A.S.boardObj.update/render (and stub ctx.launchMinigame)
+  or you'll silently tick the wrong object.
+- Build 28, deployed 5fa9167.
+
 ## Session 2026-08-28 (round 24) — dice reveal beat + fork landing previews
 - Dicing: settle at t=1.0 stores pendingMove and HOLDS until t=2.15 before
   beginMove — the die pops to 1.4x and stays big; '🎲 N!' popup (drunk
