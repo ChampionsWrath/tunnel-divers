@@ -22,6 +22,34 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 30) — 🎠 MERRY-GO-ROUND (new space + minigame)
+- **Board**: node 30 type 'carousel' (NODE_STYLE cyan-pink 🎠). nodeAction →
+  overlay {kind:'wheel'} → spin (rdt*7) until the lander taps (bots use botT);
+  authority picks from BET_WHEEL [5,10,15,20,25,30] via act 'wheel' → doWheel
+  → 1.9s reveal → startCarousel() sets pendingMg {gid:'carousel'} +
+  carouselPending and enters mgIntro.
+- **Payout**: onMinigameComplete intercepts gameId==='carousel' BEFORE the
+  normal reward path → act 'cpay' {winner, bet} → doCarouselPayout takes
+  min(bet, coins) from every loser (broke players lose all they have), pays
+  the pot to the winner, endPlayerTurn(1.4). Verified 40/12/3 @ bet 30 →
+  10/45/0.
+- **games/carousel.js**: DDR-style. Riders circle an ellipse on horses
+  (drawHorse, bob per rider, depth-sorted); note highway BELOW the ride —
+  arrows fall from H*0.52 to a hit line just above four tap zones (canvas
+  pointerdown → onPointer → tapZone; arrow keys/WASD via the shared stick
+  with edge detection). speed() 0.62→2.1, spawnGap 0.85→0.26, doubles after
+  22s. Streak ≥4 sets p.trick (1 handstand / 2 lean / 3 spin — new
+  drawDiverStand o.trick transforms); a trick run with streak ≥6 forgives
+  one miss. 2 misses = knocked off (slumped 'sad' + tear beside the ride).
+  Last rider wins; 95s hard cap.
+- **Networked**: 'st' state stream (0.25s), 'fall', 'res' authoritative
+  placements w/ 4s fallback — same pattern as lava/crown.
+- **NOT in the random deck**: main.js DECK_GAMES filters 'carousel' out and
+  it's absent from MODES; board gets gameIds: DECK_GAMES.
+- Verified: perfect play survives + bots fall progressively; idle player
+  falls after 2 misses; deck excludes it; full board→wheel→ride→pot flow.
+- Build 33, deployed 97ffb8b. Screenshot sent to Sam.
+
 ## Session 2026-08-28 (round 29) — lava networking + resync churn fix
 - **FLOOR IS LAVA HAD NO NET CODE AT ALL** (grep 'ctx.net|onNet' per game:
   lava was the only 0). Both phones ran private arenas. Now mirrors the
