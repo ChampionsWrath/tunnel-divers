@@ -1,32 +1,33 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=36';
-import * as audio from './audio.js?v=36';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=36';
-import { Net, makeRoomCode } from './net.js?v=36';
-import tunnel from './games/tunnel.js?v=36';
-import stack from './games/stack.js?v=36';
-import crown from './games/crown.js?v=36';
-import brain from './games/brain.js?v=36';
-import blast from './games/blast.js?v=36';
-import food from './games/food.js?v=36';
-import homerun from './games/homerun.js?v=36';
-import trivia from './games/trivia.js?v=36';
-import ghost from './games/ghost.js?v=36';
-import greed from './games/greed.js?v=36';
-import lava from './games/lava.js?v=36';
-import rush from './games/rush.js?v=36';
-import carousel from './games/carousel.js?v=36';
-import { createBoard } from './board.js?v=36';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=36';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=37';
+import * as audio from './audio.js?v=37';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=37';
+import { Net, makeRoomCode } from './net.js?v=37';
+import tunnel from './games/tunnel.js?v=37';
+import stack from './games/stack.js?v=37';
+import crown from './games/crown.js?v=37';
+import brain from './games/brain.js?v=37';
+import blast from './games/blast.js?v=37';
+import food from './games/food.js?v=37';
+import homerun from './games/homerun.js?v=37';
+import trivia from './games/trivia.js?v=37';
+import ghost from './games/ghost.js?v=37';
+import greed from './games/greed.js?v=37';
+import lava from './games/lava.js?v=37';
+import rush from './games/rush.js?v=37';
+import carousel from './games/carousel.js?v=37';
+import { createBoard } from './board.js?v=37';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=37';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush, carousel };
-// the carousel is reachable ONLY from the board's 🎠 space — never in the
-// random rotation and not pickable as a standalone mode
+// the carousel never comes up in the board's RANDOM rotation (it belongs to the
+// 🎠 space) — but it IS pickable as a standalone mode so it can be played/tested
+// on its own.
 const DECK_GAMES = Object.keys(GAMES).filter(k => k !== 'carousel');
 const MODES = [
-  { id: 'party', name: 'Board Game', icon: '🎲', desc: 'THE CHAOTIC BOARDWALK — dice, coins, shops, piñatas, item cards, cosmetic steals… and a minigame every turn. Highest coins+cosmetics wins.' },
+  { id: 'party', name: 'Board Game', icon: '🎲', desc: 'THE CHAOTIC BOARDWALK — race to COLLECT ALL 8 COSMETICS 🎁 via piñatas, shops and squash-steals. First to the full set wins outright; otherwise most cosmetics after the turn limit (ties: coins + value).' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
   { id: 'stack', name: stack.name, icon: stack.icon, desc: stack.desc },
   { id: 'crown', name: crown.name, icon: crown.icon, desc: crown.desc },
@@ -39,9 +40,10 @@ const MODES = [
   { id: 'greed', name: greed.name, icon: greed.icon, desc: greed.desc },
   { id: 'lava', name: lava.name, icon: lava.icon, desc: lava.desc },
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
+  { id: 'carousel', name: carousel.name, icon: carousel.icon, desc: carousel.desc + ' (board: the 🎠 space)' },
 ];
 
-const BUILD = 36;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 37;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };

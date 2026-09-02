@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=36';
+import { drawDiverTop, drawDiverStand } from './character.js?v=37';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -211,6 +211,26 @@ class Board {
   }
   cur() { return this.players[this.playerIdx]; }
   score(p) { return p.coins + p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0); }
+  // standings: most different cosmetics, ties settled by coins + cosmetic value
+  rankOrder() {
+    return [...this.players].sort((a, b) =>
+      (this.setCount(b) - this.setCount(a)) || (this.score(b) - this.score(a)));
+  }
+  // how many DIFFERENT cosmetics you've collected — this is the win condition
+  setCount(p) { return new Set(p.cosmetics).size; }
+  // collecting the whole set ends the game on the spot
+  checkCollectionWin() {
+    const done = this.players.find(p => this.setCount(p) >= COSMETICS.length);
+    if (!done || this.state === 'end') return false;
+    this.showBanner('🎁 ' + done.name + ' COLLECTED THEM ALL!', done.color, 3);
+    this.pop('🎁 FULL SET — ' + done.name + ' WINS!', '#ffd23f', 28);
+    this.ctx.audio.sfx.win();
+    // clear anything that would swallow update() before the 'end' state runs
+    this.overlay = null; this.destOptions = null; this.forcedPath = null;
+    this.pendingMg = null; this.mgLaunched = false; this.carouselPending = false;
+    this.state = 'end'; this.stateT = 0;
+    return true;
+  }
   myTurn() { const p = this.cur(); return p.local && !p.bot; }
   authority() { // who resolves the current player's choices: their client, or net-host for bots
     const p = this.cur();
@@ -290,6 +310,7 @@ class Board {
         p.cosmetics.push(d.c);
         this.pop('🎁 ' + c.icon + ' ' + c.name + ' (+' + c.value + 'pts)!', '#ffd23f', 24);
         this.ctx.audio.sfx.win();
+        this.checkCollectionWin();
         break;
       }
       case 'buy': this.doBuy(d.item); break;
@@ -441,6 +462,7 @@ class Board {
     p.cosmetics.push(c);
     this.pop('💥 SPLAT! Stole ' + cosmetic(c).icon + ' ' + cosmetic(c).name + '!', '#ff5f5f', 24);
     this.ctx.audio.sfx.crash();
+    this.checkCollectionWin();
   }
   forceBack(p, n) {
     for (let i = 0; i < n; i++) {
@@ -533,6 +555,7 @@ class Board {
     else this._pendReveal = cid;   // overlay not open yet — hand it over when it is
     this.pop('🪅 ' + c.icon + ' ' + c.name + ' (+' + c.value + 'pts)!', c.tier === 'legendary' ? '#ffd23f' : '#e08bd0', 24);
     this.ctx.audio.sfx.win();
+    this.checkCollectionWin();
   }
   doMascot(bet, win) {
     const p = this.cur();
@@ -546,6 +569,7 @@ class Board {
       p.cosmetics.push(c.id);
       this.pop('🎭 WIN! ' + c.icon + ' ' + c.name + '!', '#ffd23f', 26);
       this.ctx.audio.sfx.win();
+      this.checkCollectionWin();
     } else {
       if (p.shield) { p.shield = false; this.pop('🎭 LOSE — but the 🛡️ shield blocks the launch!', '#59d9ff'); this.ctx.audio.sfx.shield(); }
       else { this.pop('🎭 LAUNCHED 3 BACK!', '#ff5f5f', 24); this.forceBack(p, 3); this.ctx.audio.sfx.crash(); }
@@ -643,13 +667,20 @@ class Board {
     this.ctx.audio.sfx.win();
   }
   finishGame() {
+    // THE RACE: most different cosmetics collected wins. Coins + cosmetic value
+    // only settles ties (it's the tiebreak, not the goal).
     const rows = this.players
-      .map(p => ({
-        id: p.id, score: this.score(p),
-        label: p.coins + '🪙 + ' + p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0) + '⭐',
-        name: p.name, color: p.color,
-      }))
-      .sort((a, b) => b.score - a.score);
+      .map(p => {
+        const set = this.setCount(p);
+        return {
+          id: p.id, score: set * 100000 + this.score(p),   // sort key: sets first
+          sets: set, tiebreak: this.score(p),
+          label: set + '/' + COSMETICS.length + ' 🎁  ·  ' + this.score(p) + ' pts'
+            + (set === COSMETICS.length ? '  — FULL SET!' : ''),
+          name: p.name, color: p.color,
+        };
+      })
+      .sort((a, b) => (b.sets - a.sets) || (b.tiebreak - a.tiebreak));
     this.ctx.end(rows);
   }
 
@@ -1373,9 +1404,10 @@ class Board {
   }
   drawTutorial(g, W, H) {
     const CARDS = [
-      ['🎪 WELCOME TO THE BOARDWALK!', [
-        'Richest diver after ' + this.maxTurns + ' turns WINS.',
-        'Score = coins 🪙 + cosmetics ⭐',
+      ['🎪 COLLECT THEM ALL!', [
+        'Grab all ' + COSMETICS.length + ' different cosmetics 🎁',
+        'first — or have the MOST after',
+        this.maxTurns + ' turns. Ties go to coins 🪙 + value ⭐.',
       ]],
       ['🎲 ON YOUR TURN', [
         'ROLL, then TAP any glowing space',
@@ -1595,7 +1627,7 @@ class Board {
     // Mario-style player chips along the top — pushed below the phone's status bar
     const safeTop = (this.ctx.dim.safeTop || 0) + 8;
     const n = this.players.length, cw = Math.min(96, (W - 12) / n - 6), ch = 46;
-    const ranked = [...this.players].sort((a, b) => this.score(b) - this.score(a));
+    const ranked = this.rankOrder();
     this.players.forEach((p, i) => {
       const x = 6 + i * (cw + 6), y = safeTop;
       const active = this.playerIdx === i && this.state !== 'splash';
@@ -1623,8 +1655,8 @@ class Board {
       drawDiverTop(g, { x: x + 15, y: y + ch / 2, r: 10, color: p.color, t: this.tt + i, speedNorm: 0, cos: p.cosmetics, ward: p.ward, skin: p.skin });
       g.textAlign = 'left'; g.font = '800 11px system-ui';
       g.fillStyle = '#ffd23f'; g.fillText('🪙' + p.coins, x + 29, y + 18);
-      const cosVal = p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0);
-      g.fillStyle = '#ffeccf'; g.fillText('⭐' + cosVal + (p.shield ? '🛡' : ''), x + 29, y + 32);
+      g.fillStyle = '#ffd23f';
+      g.fillText('🎁' + this.setCount(p) + '/' + COSMETICS.length + (p.shield ? '🛡' : ''), x + 29, y + 32);
       g.fillStyle = '#93a0bd'; g.font = '700 9.5px system-ui';
       g.fillText(p.items.map(it => ITEMS[it].icon).join('') || '·', x + 29, y + 43);
       // rank badge
@@ -1727,7 +1759,7 @@ class Board {
       this.drawPodium(g, W, H);
     } else if (this.state === 'end') {
       g.font = '900 26px system-ui'; g.fillStyle = '#ffd23f';
-      g.fillText('🏁 FINAL SCORES…', W / 2, H * 0.45);
+      g.fillText('🏁 COUNTING THE COLLECTION…', W / 2, H * 0.45);
     }
   }
   /* post-minigame PODIUM: a full-screen 2x2 — winner spotlit and jumping,
@@ -1793,12 +1825,13 @@ class Board {
     g.fillStyle = 'rgba(16,22,36,0.92)'; g.strokeStyle = '#2a3450'; g.lineWidth = 2;
     g.fillRect(W * 0.06, sy, W * 0.88, 88); g.strokeRect(W * 0.06, sy, W * 0.88, 88);
     g.font = '800 12px system-ui'; g.fillStyle = '#93a0bd';
-    g.fillText('STANDINGS (coins + cosmetics)', W / 2, sy + 18);
-    const ranked = [...this.players].sort((a, b) => this.score(b) - this.score(a));
+    g.fillText('THE COLLECTION RACE (ties: coins + value)', W / 2, sy + 18);
+    const ranked = this.rankOrder();
     g.font = '800 13px system-ui';
     ranked.forEach((p2, i) => {
       g.fillStyle = p2.color;
-      g.fillText((i + 1) + '. ' + p2.name + ' — ' + this.score(p2) + '★', W / 2, sy + 38 + i * 16);
+      g.fillText((i + 1) + '. ' + p2.name + ' — 🎁' + this.setCount(p2) + '/' + COSMETICS.length +
+        '  (' + this.score(p2) + ' pts)', W / 2, sy + 38 + i * 16);
     });
   }
   drawOverlay(g, W, H) {
