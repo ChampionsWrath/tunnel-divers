@@ -22,6 +22,25 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 35) — collection panel + values everywhere
+- **Score cards are tappable** (drawChips pushes {id:'chip'+i} hit regions +
+  a faint "tap" hint). Tapping opens `this.panel = {kind:'collection', who}`.
+- **drawPanel()**: full COSMETICS checklist for that player — owned rows lit
+  green w/ ✓ + point value, missing rows greyed (globalAlpha 0.42) w/ —,
+  duplicates shown ×N. Header: avatar, name, n/8, coins, total pts. Green
+  progress bar toward the full set. Rendered LAST (after overlays, before the
+  tutorial).
+- **CRITICAL DESIGN**: the panel is on `this.panel`, NOT `this.overlay`.
+  overlay early-returns the update loop — using it would stall the state
+  machine and (online) everyone else's turn. Panel handling sits right after
+  the mapAny block: open on chip hit, close on ANY tap, always
+  `clicks.length = 0` so taps never fall through to a roll.
+- Values added to the two cosmetic messages that lacked them (doSteal,
+  doMascot win). Piñata pop/reveal + mystery box already had them.
+- Verified: renders for all players incl. empty collection, board keeps
+  running while open, closing doesn't roll, 8-turn bot game clean.
+- Build 38 live. Screenshot sent to Sam.
+
 ## Session 2026-08-28 (round 34) — COLLECTION RACE win condition + carousel standalone
 - **THE BOARD'S GOAL CHANGED.** It is no longer "most points". It is a race to
   collect all 8 DIFFERENT cosmetics:
