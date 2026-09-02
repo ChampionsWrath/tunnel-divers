@@ -22,6 +22,30 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 34) — COLLECTION RACE win condition + carousel standalone
+- **THE BOARD'S GOAL CHANGED.** It is no longer "most points". It is a race to
+  collect all 8 DIFFERENT cosmetics:
+  * `setCount(p)` = new Set(p.cosmetics).size — duplicates DON'T advance you.
+  * `checkCollectionWin()` called after EVERY cosmetic gain (mbox act, doSteal,
+    applyPinata, doMascot win) → full set ends the game INSTANTLY mid-turn.
+    It clears overlay/destOptions/forcedPath/pendingMg first, otherwise the
+    overlay early-return in update() swallows the 'end' state.
+  * Turn limit still applies; `finishGame` sorts by sets then by score()
+    (coins + cosmetic value) as the TIEBREAK only. rows carry {sets, tiebreak}.
+  * `rankOrder()` is the shared sort used by chips + podium standings.
+- HUD/text updated everywhere: chips show 🎁 n/8 (was ⭐value), podium strip
+  "THE COLLECTION RACE (ties: coins + value)", tutorial card 1, MODES party
+  description, end-state caption.
+- Design consequence: SQUASH STEALS are now the sharpest weapon — taking a
+  type you don't own advances your race and sets the victim back.
+- **Carousel added to MODES** (pickable standalone for testing/play) while
+  still filtered out of DECK_GAMES, so the board's random rotation never
+  picks it — it appears in a board game only via the 🎠 space.
+- Verified: 3 cosmetics @31pts beats 2 @620pts; tie at 2 sets → higher points
+  wins and a 1-set/1009pt player is LAST; full set ends instantly w/ "FULL
+  SET!" label; 14-turn bot game ranks correctly, 0 errors.
+- Build 37 live.
+
 ## Session 2026-08-28 (rounds 31-33) — cache-proofing + carousel art pass
 - **CACHE WAS THE "it's not there" BUG.** GitHub Pages serves index.html and
   main.js with Cache-Control: max-age=600 (verified via curl -I); phones and
