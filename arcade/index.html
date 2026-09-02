@@ -138,6 +138,27 @@
   <div class="muted" style="margin-top:6px;font-size:12px">👇 practice below — the real round starts when everyone readies up</div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<!-- BOOTSTRAP: GitHub Pages serves index.html/main.js with max-age=600, and
+     phones (especially home-screen webclips) can hold them far longer — which
+     looks exactly like "I refreshed and the new stuff isn't there". version.json
+     is fetched with cache:'no-store', so the real build number always comes off
+     the network and main.js is imported at that version. Stale HTML can no
+     longer serve stale code. -->
+<script>
+(async () => {
+  let v = Date.now();
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) v = (await r.json()).build || v;
+  } catch (e) { }
+  try {
+    await import('./js/main.js?v=' + v);
+  } catch (e) {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div style="position:fixed;inset:auto 0 0 0;padding:14px;background:#2a1020;color:#ff8a8a;' +
+      'font:600 13px system-ui;text-align:center;z-index:99">Could not load the game — check your connection, then reload.</div>');
+  }
+})();
+</script>
 </body>
 </html>

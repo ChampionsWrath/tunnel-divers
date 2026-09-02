@@ -4,7 +4,7 @@
 // streak and your diver starts showing off — handstands on the horse. Miss
 // and you're thrown into the sawdust. Last rider standing takes the pot.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverStand, skinTone } from '../character.js?v=33';
+import { drawDiverStand, skinTone } from '../character.js?v=34';
 
 const DIRS = ['left', 'up', 'down', 'right'];
 const ARROW = { left: '◀', up: '▲', down: '▼', right: '▶' };
