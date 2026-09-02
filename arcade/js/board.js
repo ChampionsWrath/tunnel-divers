@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=38';
+import { drawDiverTop, drawDiverStand } from './character.js?v=39';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {

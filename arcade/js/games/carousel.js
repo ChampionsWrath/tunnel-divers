@@ -1,10 +1,12 @@
 // MERRY-GO-ROUND — the board's gambling minigame (reachable ONLY from a 🎠
 // space). Everyone rides a horse on a carousel that keeps speeding up; arrows
-// scroll into the hit line and you tap the matching zone to stay on. Nail a
+// scroll down into a coloured target band and you tap the matching button
+// while one is inside it — past the band is a red run-out, and an arrow that
+// reaches the red has already been missed. Nail a
 // streak and your diver starts showing off — handstands on the horse. Miss
 // and you're thrown into the sawdust. Last rider standing takes the pot.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverStand, skinTone } from '../character.js?v=38';
+import { drawDiverStand, skinTone } from '../character.js?v=39';
 
 const DIRS = ['left', 'up', 'down', 'right'];
 const ARROW = { left: '◀', up: '▲', down: '▼', right: '▶' };
@@ -13,13 +15,15 @@ const DIR_COL = { left: '#e08bd0', up: '#7dff6a', down: '#59d9ff', right: '#ffd2
 // down to a hit line sitting just above the tap zones
 const SPAWN_Y = 0.52;
 const MISS_GRACE = 0.055;    // |t| window (in note-travel units) that counts as a hit
+const rgba = (hex, a) => 'rgba(' + parseInt(hex.slice(1, 3), 16) + ',' +
+  parseInt(hex.slice(3, 5), 16) + ',' + parseInt(hex.slice(5, 7), 16) + ',' + a + ')';
 
 export default {
   id: 'carousel', name: 'Merry-Go-Round', icon: '🎠',
   desc: 'Ride the carousel, hit the beats, be the last one on.',
   howto: {
-    goal: 'Everyone rides the carousel. Arrows scroll up into the glowing line — TAP the matching zone right as they land. The ride keeps speeding up! Miss twice and you fall off. Last rider standing wins the whole pot.',
-    touch: 'Tap the ◀ ▲ ▼ ▶ zone at the bottom that matches the arrow',
+    goal: 'Everyone rides the carousel. Arrows scroll down into the COLORED BAND — that band is the target: tap the matching button while an arrow is inside it. Once an arrow hits the RED it is already gone. The ride keeps speeding up! Miss twice and you fall off. Last rider standing wins the whole pot.',
+    touch: 'Tap the ◀ ▲ ▼ ▶ button while its arrow is in the colored band (red = too late)',
     keys: 'Arrow keys / WASD',
     tip: 'Chain hits for a STREAK — your diver starts doing tricks, and a trick run makes the next miss forgivable.',
   },
@@ -429,49 +433,90 @@ class CarouselGame {
     g.lineTo(cx, canTop - 30 * S); g.closePath(); g.fill();
     g.restore();
     // ---- note highway (below the ride, above the buttons) ----
+    // The geometry is worked BACKWARDS from the buttons so that the entire
+    // scoring window is visible above them: arrow lands in the coloured band =
+    // hit, arrow reaches the red = already gone. Nothing is ever judged once
+    // it's over a button, so the buttons never read as targets.
     const zoneH = H * 0.115, zoneY = H - zoneH - (this.ctx.dim.safeBottom || 0);
-    const lineY = zoneY - 26;
     const zw = W / 4;
+    const WIN = MISS_GRACE * 3;          // the exact ± window judge() uses
+    const LATE_H = Math.max(22, H * 0.032);  // red run-out beneath the band
+    const top = H * SPAWN_Y;
+    const bandBot = zoneY - LATE_H;      // t = 1 + WIN lands exactly here
+    const lineY = (bandBot + top * WIN) / (1 + WIN);   // t = 1
+    const bandTop = top + (1 - WIN) * (lineY - top);   // t = 1 - WIN
+    const yAt = t => lerp(top, lineY, t);
     // darkened track so the arrows pop against the fairground
-    const trk = g.createLinearGradient(0, H * SPAWN_Y - 20, 0, lineY + 10);
+    const trk = g.createLinearGradient(0, top - 20, 0, bandTop);
     trk.addColorStop(0, 'rgba(8,6,16,0)'); trk.addColorStop(0.18, 'rgba(8,6,16,0.72)');
     trk.addColorStop(1, 'rgba(8,6,16,0.82)');
-    g.fillStyle = trk; g.fillRect(0, H * SPAWN_Y - 20, W, lineY + 10 - (H * SPAWN_Y - 20));
+    g.fillStyle = trk; g.fillRect(0, top - 20, W, bandTop - (top - 20));
     // lane guides
     g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 1;
-    for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(i * zw, H * SPAWN_Y); g.lineTo(i * zw, lineY); g.stroke(); }
-    // hit line
-    g.globalAlpha = 0.9;
-    g.strokeStyle = '#fff'; g.lineWidth = 3;
+    for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(i * zw, top); g.lineTo(i * zw, bandTop); g.stroke(); }
+    // how close each lane is to its moment — the band lights up as an arrow enters
+    const hot = { left: 0, up: 0, down: 0, right: 0 };
+    for (const n of this.notes) {
+      if (n.dead) continue;
+      const k = 1 - Math.min(1, Math.abs(1 - n.t) / WIN);
+      if (k > hot[n.dir]) hot[n.dir] = k;
+    }
+    // ---- THE TARGET BAND: tap while the arrow is in this colour ----
+    DIRS.forEach((d, i) => {
+      const x = i * zw + 3, w = zw - 6, h2 = bandBot - bandTop, k = hot[d];
+      const bg = g.createLinearGradient(0, bandTop, 0, bandBot);
+      bg.addColorStop(0, rgba(DIR_COL[d], 0.10 + k * 0.18));
+      bg.addColorStop(0.5, rgba(DIR_COL[d], 0.34 + k * 0.42));
+      bg.addColorStop(1, rgba(DIR_COL[d], 0.10 + k * 0.18));
+      g.fillStyle = bg; g.fillRect(x, bandTop, w, h2);
+      g.strokeStyle = rgba(DIR_COL[d], 0.55 + k * 0.45); g.lineWidth = k > 0.2 ? 3 : 1.5;
+      g.strokeRect(x + 0.5, bandTop + 0.5, w - 1, h2 - 1);
+    });
+    // ---- THE RED: past this and it's already a miss ----
+    const late = g.createLinearGradient(0, bandBot, 0, zoneY);
+    late.addColorStop(0, 'rgba(255,52,52,0.55)'); late.addColorStop(1, 'rgba(255,52,52,0.10)');
+    g.fillStyle = late; g.fillRect(0, bandBot, W, zoneY - bandBot);
+    g.strokeStyle = '#ff4d4d'; g.lineWidth = 2.5;
+    g.beginPath(); g.moveTo(0, bandBot); g.lineTo(W, bandBot); g.stroke();
+    // white line marks the top of the window — arrows are live the moment they cross it
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2.5;
+    g.beginPath(); g.moveTo(0, bandTop); g.lineTo(W, bandTop); g.stroke();
+    g.setLineDash([5, 6]); g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 1.5;
     g.beginPath(); g.moveTo(0, lineY); g.lineTo(W, lineY); g.stroke();
-    g.globalAlpha = 1;
-    g.font = '800 11px system-ui'; g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,0.75)';
-    g.fillText('TAP WHEN IT CROSSES', 8, lineY - 8);
-    // notes fall from under the ride → down to the line
+    g.setLineDash([]);
+    g.font = '800 11px system-ui'; g.textAlign = 'left';
+    g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText('TAP IN THE COLOR', 8, bandTop - 7);
+    g.fillStyle = 'rgba(255,140,140,0.95)'; g.textAlign = 'right';
+    g.fillText('TOO LATE', W - 8, Math.min(zoneY - 5, bandBot + 14));
+    // notes fall from under the ride → through the band → into the red
     for (const n of this.notes) {
       if (n.dead && !n.missed) continue;
-      const y = lerp(H * SPAWN_Y, lineY, clamp(n.t, 0, 1.4));
+      const y = yAt(clamp(n.t, 0, 1 + WIN * 1.55));
       const x = zw * (DIRS.indexOf(n.dir) + 0.5);
-      const near = 1 - Math.min(1, Math.abs(1 - n.t) * 5);
+      const near = 1 - Math.min(1, Math.abs(1 - n.t) / WIN);
       g.globalAlpha = n.dead ? 0.25 : 1;
-      g.fillStyle = DIR_COL[n.dir];
+      g.fillStyle = n.missed ? '#8a3030' : DIR_COL[n.dir];
       g.beginPath(); g.arc(x, y, 22 * S + near * 5 * S, 0, TAU); g.fill();
-      g.strokeStyle = '#14100a'; g.lineWidth = 3; g.stroke();
-      g.fillStyle = '#14100a'; g.font = '900 ' + Math.round(26 * S) + 'px system-ui';
+      g.strokeStyle = n.missed ? '#ff4d4d' : '#14100a'; g.lineWidth = 3; g.stroke();
+      g.fillStyle = n.missed ? '#ffdcdc' : '#14100a'; g.font = '900 ' + Math.round(26 * S) + 'px system-ui';
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(ARROW[n.dir], x, y + 1);
       g.textBaseline = 'alphabetic'; g.globalAlpha = 1;
     }
-    // ---- tap zones ----
+    // ---- tap zones: buttons you press, NOT places the arrows are heading ----
     DIRS.forEach((d, i) => {
       const x = i * zw, fx = this.zoneFx[d];
-      g.fillStyle = fx > 0 ? 'rgba(255,236,160,' + (0.15 + fx * 0.5).toFixed(2) + ')' : 'rgba(16,22,36,0.72)';
+      g.fillStyle = fx > 0 ? 'rgba(255,236,160,' + (0.15 + fx * 0.5).toFixed(2) + ')' : 'rgba(16,22,36,0.85)';
       g.fillRect(x + 3, zoneY, zw - 6, zoneH);
-      g.strokeStyle = DIR_COL[d]; g.lineWidth = fx > 0 ? 4 : 2.5;
+      g.strokeStyle = fx > 0 ? DIR_COL[d] : 'rgba(255,255,255,0.22)';
+      g.lineWidth = fx > 0 ? 4 : 1.5;
       g.strokeRect(x + 3, zoneY, zw - 6, zoneH);
-      g.fillStyle = DIR_COL[d]; g.font = '900 ' + Math.round(30 * S) + 'px system-ui';
+      g.fillStyle = fx > 0 ? DIR_COL[d] : rgba(DIR_COL[d], 0.62);
+      g.font = '900 ' + Math.round(30 * S) + 'px system-ui';
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(ARROW[d], x + zw / 2, zoneY + zoneH / 2);
+      g.fillText(ARROW[d], x + zw / 2, zoneY + zoneH * 0.44);
+      g.font = '800 9px system-ui'; g.fillStyle = 'rgba(255,255,255,0.42)';
+      g.fillText('TAP', x + zw / 2, zoneY + zoneH * 0.82);
       g.textBaseline = 'alphabetic';
     });
     this._zoneRect = { y: zoneY, h: zoneH, zw };

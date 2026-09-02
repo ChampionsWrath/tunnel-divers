@@ -22,6 +22,30 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 36) — carousel timing window made visible
+- Sam: "hard to tell where im supposed to click... visuals make it look like I
+  should press it when the presses fall into the colored rectangles but its
+  basically supposed to be hit between the white line and the colored line."
+  He was right — the old art lied about the mechanic.
+- The highway geometry is now derived BACKWARDS from the buttons so the whole
+  scoring window is drawn above them:
+    WIN = MISS_GRACE*3 (0.165, the exact window judge() uses)
+    bandBot = zoneY - LATE_H   -> t = 1 + WIN
+    lineY   = (bandBot + top*WIN) / (1 + WIN)   -> t = 1
+    bandTop = top + (1-WIN)*(lineY-top)         -> t = 1 - WIN
+  So the drawn band IS the judged window, pixel for pixel.
+- Reads as: white line = window opens, COLORED BAND (per-lane DIR_COL, lights
+  up as an arrow enters via `hot`) = tap now, RED strip = too late. Missed
+  arrows recolor dark-red and stop in the red instead of sliding over the
+  buttons.
+- Tap zones de-emphasised into buttons: neutral border at rest, arrow at 62%
+  alpha, small "TAP" caption. They only light in DIR_COL on a registered hit.
+- NO gameplay/sync change — judge(), spawn chart and net messages untouched,
+  this is render + howto text only.
+- Verified: tap at t=1±(WIN-0.004) hits, t=1±(WIN+0.004) misses (drawn edges
+  match judged edges), 80s run clean, checked on 375x812 portrait + landscape.
+- Build 39.
+
 ## Session 2026-08-28 (round 35) — collection panel + values everywhere
 - **Score cards are tappable** (drawChips pushes {id:'chip'+i} hit regions +
   a faint "tap" hint). Tapping opens `this.panel = {kind:'collection', who}`.
