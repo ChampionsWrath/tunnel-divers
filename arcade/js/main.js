@@ -1,25 +1,25 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=34';
-import * as audio from './audio.js?v=34';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=34';
-import { Net, makeRoomCode } from './net.js?v=34';
-import tunnel from './games/tunnel.js?v=34';
-import stack from './games/stack.js?v=34';
-import crown from './games/crown.js?v=34';
-import brain from './games/brain.js?v=34';
-import blast from './games/blast.js?v=34';
-import food from './games/food.js?v=34';
-import homerun from './games/homerun.js?v=34';
-import trivia from './games/trivia.js?v=34';
-import ghost from './games/ghost.js?v=34';
-import greed from './games/greed.js?v=34';
-import lava from './games/lava.js?v=34';
-import rush from './games/rush.js?v=34';
-import carousel from './games/carousel.js?v=34';
-import { createBoard } from './board.js?v=34';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=34';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=35';
+import * as audio from './audio.js?v=35';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=35';
+import { Net, makeRoomCode } from './net.js?v=35';
+import tunnel from './games/tunnel.js?v=35';
+import stack from './games/stack.js?v=35';
+import crown from './games/crown.js?v=35';
+import brain from './games/brain.js?v=35';
+import blast from './games/blast.js?v=35';
+import food from './games/food.js?v=35';
+import homerun from './games/homerun.js?v=35';
+import trivia from './games/trivia.js?v=35';
+import ghost from './games/ghost.js?v=35';
+import greed from './games/greed.js?v=35';
+import lava from './games/lava.js?v=35';
+import rush from './games/rush.js?v=35';
+import carousel from './games/carousel.js?v=35';
+import { createBoard } from './board.js?v=35';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=35';
 
 const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush, carousel };
 // the carousel is reachable ONLY from the board's 🎠 space — never in the
@@ -41,7 +41,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 34;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 35;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -90,6 +90,30 @@ $('nameIn').addEventListener('change', () => {
   lsSet('td_name', S.profile.name);
 });
 if ($('buildTag')) $('buildTag').textContent = 'build ' + BUILD + ' — everyone in a room must match';
+/* UPDATE CHECK — browsers cache this page for up to 10 minutes (GitHub Pages
+   sends max-age=600), so a plain refresh can silently keep serving an old
+   build. Ask the network what the real build is and offer a one-tap reload
+   that busts the cache with a query string. */
+async function checkForUpdate() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const live = (await r.json()).build;
+    if (!live || live <= BUILD || $('updBar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'updBar';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;padding:12px 14px;' +
+      'background:#1d6fb8;color:#fff;font:800 14px system-ui;text-align:center;cursor:pointer;' +
+      'box-shadow:0 -6px 18px rgba(0,0,0,0.4)';
+    bar.textContent = '⬆️ UPDATE AVAILABLE (build ' + live + ') — TAP TO RELOAD';
+    bar.addEventListener('click', () => {
+      location.replace(location.pathname + '?v=' + live);
+    });
+    document.body.appendChild(bar);
+  } catch (e) { }
+}
+checkForUpdate();
+setInterval(checkForUpdate, 90000);
 /* ---------------- CHARACTER screen: skin + wardrobe, live preview ---------------- */
 $('skinIn').value = S.profile.skin;
 $('skinIn').addEventListener('input', () => {
