@@ -12,9 +12,9 @@ export default {
   desc: 'Flip for treasure. Bank it — or the monster eats your pot.',
   howto: {
     goal: 'A vault of 25 hidden tiles — one hides the MONSTER. On your turn, flip tiles to build a pot, then BANK to keep it… or keep flipping. Hit the monster and your pot is GONE (and the vault reshuffles). ' + TURNS + ' turns each — richest player wins.',
-    touch: 'TAP a tile to flip · TAP the BANK button to keep your pot',
-    keys: 'CLICK tiles · SPACE or click to BANK',
-    tip: 'Revealed tiles stay revealed — remember what\'s left! Fewer hidden tiles = better odds the monster is next.',
+    touch: 'TAP tiles to keep flipping · TAP the BANK button when you want to stop',
+    keys: 'CLICK tiles to keep flipping · SPACE or the BANK button to stop',
+    tip: 'Flip as many as you dare — nothing banks until YOU say so. Revealed tiles stay revealed, so remember what\'s left: fewer hidden tiles = better odds the monster is next.',
   },
   create(ctx) { return new GreedGame(ctx); }
 };
@@ -44,8 +44,12 @@ class GreedGame {
     this.botT = 1.2;
     this.pops = []; this.tt = 0;
     this.clicks = [];
+    this.wantBank = false;
     this._pd = e => { this.clicks.push([e.clientX, e.clientY]); };
     ctx.cv.addEventListener('pointerdown', this._pd);
+    // SPACE banks for keyboard players (the canvas tap can't — it's the flip)
+    this._kd = e => { if (e.code === 'Space') { e.preventDefault(); this.wantBank = true; } };
+    window.addEventListener('keydown', this._kd);
     this.shuffle();
     this.banner = this.curP().name + "'S TURN";
     this.bannerT = 1.4;
@@ -99,6 +103,7 @@ class GreedGame {
     if (!this.practice && this.turn >= this.players.length * TURNS) { this.phase = 'done'; this.phaseT = 0; return; }
     this.round = Math.floor(this.turn / this.players.length) + 1;
     this.pot = 0; this.phase = 'play'; this.phaseT = 0;
+    this.wantBank = false;
     this.botT = 1 + this.rng() * 0.6;
     this.banner = this.curP().name + "'S TURN"; this.bannerT = 1.3;
     if (this.hiddenCount() < 5) this.shuffle();   // nearly-empty vault refills
@@ -110,7 +115,7 @@ class GreedGame {
     for (const c of this.grid) if (c.flash > 0) c.flash -= rdt * 2.5;
     this.ctx.audio.setMusicIntensity(0.35 + clamp(this.pot / 800, 0, 0.4));
     if (this.phase === 'boom') {
-      this.clicks.length = 0;
+      this.clicks.length = 0; this.wantBank = false;
       if (this.phaseT > 1.3) { this.shuffle(); this.nextTurn(); }
       return;
     }
@@ -132,8 +137,14 @@ class GreedGame {
     }
     const p = this.curP(), { gx, gy, cell } = this.layout(), br = this.bankRect();
     if (p.local && !p.bot) {
-      const inp = this.ctx.input(p.slot, rdt);
-      if (inp.act && this.pot > 0 && this.phaseT > 0.4) { this.bank(); this.clicks.length = 0; return; }
+      // NOTE: deliberately NOT ctx.input().act here — that flag is set by ANY
+      // tap on the canvas, which is the same tap that flips a tile, so it used
+      // to bank you out the moment you went for a second tile. Banking is the
+      // BANK button or the SPACE key, nothing else.
+      if (this.wantBank) {
+        this.wantBank = false;
+        if (this.pot > 0 && this.bannerT <= 0) { this.bank(); this.clicks.length = 0; return; }
+      }
       if (this.clicks.length && this.bannerT <= 0) {
         for (const [px, py] of this.clicks) {
           if (px >= br.x && px <= br.x + br.w && py >= br.y && py <= br.y + br.h) {
@@ -148,7 +159,7 @@ class GreedGame {
         this.clicks.length = 0;
       } else this.clicks.length = 0;
     } else if (p.bot) {
-      this.clicks.length = 0;
+      this.clicks.length = 0; this.wantBank = false;   // a stray SPACE can't carry into your turn
       this.botT -= rdt;
       if (this.botT <= 0 && this.bannerT <= 0) {
         this.botT = 0.75 + this.rng() * 0.7;
@@ -263,5 +274,8 @@ class GreedGame {
     }
     g.globalAlpha = 1;
   }
-  dispose() { this.ctx.cv.removeEventListener('pointerdown', this._pd); }
+  dispose() {
+    this.ctx.cv.removeEventListener('pointerdown', this._pd);
+    window.removeEventListener('keydown', this._kd);
+  }
 }

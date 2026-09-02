@@ -22,6 +22,32 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 38) — Grid N' Greed banked you after one tile
+- Sam: "it makes me bank my money automatically after just picking 1 tile, but
+  I should be able to keep going then bank when i want."
+- Cause, greed.js update(): `if (inp.act && this.pot > 0 && phaseT > 0.4) bank()`.
+  `ctx.input().act` is `taps[slot]` from input.js — set by ANY canvas
+  pointerdown, i.e. the exact same tap that flips a tile. Frame order made it
+  look intermittent: on the FIRST flip pot is still 0 when input() is read, so
+  the guard fails and the tile flips; on the SECOND tap pot > 0, so it banked
+  and returned before the click loop ever ran. One tile, then forced bank,
+  every time.
+- Fix: greed no longer reads ctx.input() at all. Banking is the BANK button
+  (already handled in the click loop) or a real SPACE keydown listener owned by
+  the game, feeding a `wantBank` flag. Flag is cleared on nextTurn, in the boom
+  phase and on any bot tick so a stray SPACE can't carry into your turn, and
+  dispose() now unhooks the keydown listener alongside the pointerdown one.
+- howto rewritten: "TAP tiles to keep flipping · TAP the BANK button when you
+  want to stop" + tip "nothing banks until YOU say so".
+- Verified: 4 straight tile taps flip and grow the pot 50→75→125→150 with
+  banked still 0 and the turn not advancing; the BANK button then takes all 150
+  and passes the turn; SPACE banks 400; 489 flips / 152 banks with no errors;
+  dispose() removes the listener.
+- WATCH FOR THIS ELSEWHERE: any minigame that reads both `ctx.input().act` AND
+  its own canvas clicks has this double-read hazard. It's the same root cause as
+  the build-40 board fix (_eatAct). Worth an audit pass across games/.
+- Build 41.
+
 ## Session 2026-08-28 (round 37) — tap a diver to see his collection
 - Same collection card as the score chips, now opened by tapping the DIVER on
   the board. `drawStanding` pushes a per-frame rect into `this.pawnHits`
