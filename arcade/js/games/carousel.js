@@ -4,7 +4,7 @@
 // streak and your diver starts showing off — handstands on the horse. Miss
 // and you're thrown into the sawdust. Last rider standing takes the pot.
 import { TAU, clamp, lerp, mulberry32 } from '../util.js';
-import { drawDiverStand, skinTone } from '../character.js?v=35';
+import { drawDiverStand, skinTone } from '../character.js?v=36';
 
 const DIRS = ['left', 'up', 'down', 'right'];
 const ARROW = { left: '◀', up: '▲', down: '▼', right: '▶' };
@@ -236,78 +236,209 @@ class CarouselGame {
     const S = Math.min(W, H) / 700;
     g.save();
     if (this.shake > 0.3) g.translate((Math.random() * 2 - 1) * this.shake, (Math.random() * 2 - 1) * this.shake * 0.6);
-    // ---- tent interior ----
+    // ================= THE CAROUSEL =================
+    const cx = W / 2;
+    const canopyY = H * 0.178;                 // underside of the canopy rim
+    const ringY = H * 0.365, rx = W * 0.35, ry = H * 0.058;
+    const platY = ringY + H * 0.05;            // platform sits under the horses
+
+    // --- fairground interior: tent above, sawdust floor below ---
     const bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#2a1a3e'); bg.addColorStop(0.55, '#5a2f52'); bg.addColorStop(1, '#c2703f');
+    bg.addColorStop(0, '#160d28'); bg.addColorStop(0.3, '#40204a');
+    bg.addColorStop(0.52, '#7d3a4e'); bg.addColorStop(0.62, '#8a5a34'); bg.addColorStop(1, '#4a2f18');
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    // striped canopy
-    const cx = W / 2, topY = H * 0.045;
-    for (let i = 0; i < 14; i++) {
-      g.fillStyle = i % 2 ? '#e04040' : '#f2ece2';
-      g.beginPath(); g.moveTo(cx, topY - H * 0.05);
-      g.arc(cx, topY + H * 0.12, W * 0.72, Math.PI + i * (Math.PI / 14), Math.PI + (i + 1) * (Math.PI / 14));
-      g.closePath(); g.fill();
+    // warm glow pooling around the ride
+    const gl = g.createRadialGradient(cx, ringY, 10, cx, ringY, W * 0.85);
+    gl.addColorStop(0, 'rgba(255,190,110,0.3)'); gl.addColorStop(1, 'rgba(255,190,110,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, W, H * 0.66);
+    // distant fairground bulbs strung across the tent
+    g.strokeStyle = 'rgba(255,220,150,0.18)'; g.lineWidth = 1.5;
+    for (const yy of [H * 0.055, H * 0.085]) {
+      g.beginPath();
+      for (let x = 0; x <= W; x += 12) g[x ? 'lineTo' : 'moveTo'](x, yy + Math.sin(x * 0.02) * 5);
+      g.stroke();
+      for (let x = 14; x < W; x += 46) {
+        const tw = 0.4 + 0.6 * Math.abs(Math.sin(this.tt * 3 + x));
+        g.fillStyle = 'rgba(255,230,170,' + (tw * 0.5).toFixed(2) + ')';
+        g.beginPath(); g.arc(x, yy + Math.sin(x * 0.02) * 5 + 3, 2.4 * S, 0, TAU); g.fill();
+      }
     }
+
+    // --- platform (rotating deck) ---
+    const pr = rx * 1.16, pry = ry * 1.5;
+    g.fillStyle = '#5e3a22';                   // deck edge / skirt
+    g.beginPath(); g.ellipse(cx, platY + H * 0.028, pr, pry, 0, 0, TAU); g.fill();
+    g.fillStyle = '#8a5a34';
+    g.beginPath(); g.ellipse(cx, platY, pr, pry, 0, 0, TAU); g.fill();
+    g.save();                                  // radial planks turn with the ride
+    g.beginPath(); g.ellipse(cx, platY, pr, pry, 0, 0, TAU); g.clip();
+    g.strokeStyle = 'rgba(60,34,16,0.45)'; g.lineWidth = 1.5;
+    for (let i = 0; i < 24; i++) {
+      const a = this.spin * 0.6 + i / 24 * TAU;
+      g.beginPath(); g.moveTo(cx, platY);
+      g.lineTo(cx + Math.cos(a) * pr, platY + Math.sin(a) * pry); g.stroke();
+    }
+    g.restore();
     g.strokeStyle = '#ffd23f'; g.lineWidth = 3;
-    g.beginPath(); g.arc(cx, topY + H * 0.12, W * 0.72, Math.PI, TAU); g.stroke();
-    // center pole
-    g.fillStyle = '#c9a06a'; g.fillRect(cx - W * 0.02, topY + H * 0.08, W * 0.04, H * 0.3);
-    // ---- the ride: riders on horses around an ellipse ----
-    const ringY = H * 0.34, rx = W * 0.36, ry = H * 0.075;
-    g.strokeStyle = 'rgba(255,210,110,0.35)'; g.lineWidth = 6;
-    g.beginPath(); g.ellipse(cx, ringY, rx, ry, 0, 0, TAU); g.stroke();
+    g.beginPath(); g.ellipse(cx, platY, pr, pry, 0, 0, TAU); g.stroke();
+    // rim lights around the deck
+    for (let i = 0; i < 20; i++) {
+      const a = i / 20 * TAU, lx = cx + Math.cos(a) * pr, ly = platY + Math.sin(a) * pry;
+      const tw = 0.55 + 0.45 * Math.sin(this.tt * 5 + i);
+      g.fillStyle = 'rgba(255,236,160,' + tw.toFixed(2) + ')';
+      g.beginPath(); g.arc(lx, ly, 2.6 * S, 0, TAU); g.fill();
+    }
+
+    // --- riders sorted back-to-front ---
     const riders = this.ps.map((p, i) => {
       const a = this.spin + (i / this.ps.length) * TAU;
       return { p, a, x: cx + Math.cos(a) * rx, y: ringY + Math.sin(a) * ry, depth: Math.sin(a) };
     }).sort((a, b) => a.depth - b.depth);
-    for (const r of riders) {
+    const drawRider = (r) => {
       const p = r.p;
-      const sc = S * (1.5 + r.depth * 0.35);
-      const bobY = Math.sin(this.spin * 3 + r.p.seat * 1.7) * 8 * S;   // horses rise and fall
+      const sc = S * (1.85 + r.depth * 0.5);           // near riders are bigger
+      const bobY = Math.sin(this.spin * 2.4 + p.seat * 1.7) * 10 * S;
       const y = r.y + bobY;
-      // brass pole
-      g.strokeStyle = '#ffd23f'; g.lineWidth = 3 * sc / S * 0.6;
-      g.beginPath(); g.moveTo(r.x, y - 62 * sc); g.lineTo(r.x, y + 26 * sc); g.stroke();
-      // horse
-      this.drawHorse(g, r.x, y, sc, p.color);
+      const faceRight = Math.cos(r.a) >= 0 ? 1 : -1;   // horses face the way they travel
+      const dim = 0.55 + 0.45 * ((r.depth + 1) / 2);   // far side sits in shadow
+      // twisted brass pole, canopy → deck
+      const poleTop = canopyY + H * 0.01;
+      const poleBot = platY + Math.sin(r.a) * pry * 0.6;
+      const pg = g.createLinearGradient(r.x - 3 * sc, 0, r.x + 3 * sc, 0);
+      pg.addColorStop(0, '#8a6a1e'); pg.addColorStop(0.4, '#ffe9a0');
+      pg.addColorStop(0.6, '#ffd23f'); pg.addColorStop(1, '#8a6a1e');
+      g.strokeStyle = pg; g.lineWidth = 3.4 * sc;
+      g.beginPath(); g.moveTo(r.x, poleTop); g.lineTo(r.x, poleBot); g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1 * sc;   // helical glint
+      g.beginPath();
+      for (let k = 0; k <= 16; k++) {
+        const f = k / 16, yy = lerp(poleTop, poleBot, f);
+        const xx = r.x + Math.sin(f * 22 + this.spin * 2) * 1.6 * sc;
+        g[k ? 'lineTo' : 'moveTo'](xx, yy);
+      }
+      g.stroke();
+      g.globalAlpha = dim;
+      this.drawHorse(g, r.x, y, sc, p.color, faceRight, p.seat);
+      g.globalAlpha = 1;
       if (p.alive) {
         drawDiverStand(g, {
-          x: r.x, y: y - 34 * sc, scale: sc * 0.52,
+          x: r.x - 1 * sc, y: y - 30 * sc, scale: sc * 0.5,
           color: p.color, skin: p.skin, ward: p.ward, cos: p.cos,
           t: this.tt + p.seat, mood: p.streak >= 4 ? 'cheer' : 'idle',
           trick: p.trick,
         });
-        // trick flourish
         if (p.trick) {
           g.fillStyle = '#ffd23f'; g.font = '900 ' + Math.round(11 * sc) + 'px system-ui';
           g.textAlign = 'center';
-          g.fillText(['', '🤸', '🙌', '🌟'][p.trick] || '🤸', r.x + 22 * sc, y - 44 * sc);
+          g.fillText(['', '🤸', '🙌', '🌟'][p.trick] || '🤸', r.x + 24 * sc, y - 40 * sc);
         }
       } else {
-        // fallen: a sad heap beside the ride
-        g.globalAlpha = 0.5;
+        g.globalAlpha = 0.45;
         drawDiverStand(g, {
-          x: r.x, y: y + 18 * sc, scale: sc * 0.42,
+          x: r.x, y: y + 26 * sc, scale: sc * 0.4,
           color: p.color, skin: p.skin, ward: p.ward, cos: p.cos,
           t: this.tt, mood: 'sad', tear: true,
         });
         g.globalAlpha = 1;
       }
-      g.font = '800 ' + Math.round(9 * sc) + 'px system-ui'; g.textAlign = 'center';
+      g.font = '800 ' + Math.round(9.5 * sc) + 'px system-ui'; g.textAlign = 'center';
+      g.lineWidth = 3; g.strokeStyle = 'rgba(10,8,4,0.75)';
+      const nm = p.name + (p.alive ? '' : ' 💥');
+      g.strokeText(nm, r.x, y + 40 * sc);
       g.fillStyle = p.alive ? p.color : '#6b7488';
-      g.fillText(p.name + (p.alive ? '' : ' 💥'), r.x, y + 38 * sc);
+      g.fillText(nm, r.x, y + 40 * sc);
       if (p.alive && p.streak > 2) {
-        g.fillStyle = '#ffd23f'; g.font = '900 ' + Math.round(9 * sc) + 'px system-ui';
-        g.fillText('x' + p.streak, r.x, y + 50 * sc);
+        g.font = '900 ' + Math.round(9.5 * sc) + 'px system-ui';
+        g.strokeText('x' + p.streak, r.x, y + 52 * sc);
+        g.fillStyle = '#ffd23f'; g.fillText('x' + p.streak, r.x, y + 52 * sc);
       }
+    };
+    for (const r of riders) if (r.depth < 0) drawRider(r);     // far side first
+
+    // --- mirrored center column ---
+    const colW = W * 0.052;
+    const cg = g.createLinearGradient(cx - colW, 0, cx + colW, 0);
+    cg.addColorStop(0, '#6b4a2b'); cg.addColorStop(0.35, '#f2ece2');
+    cg.addColorStop(0.6, '#d9c9a8'); cg.addColorStop(1, '#6b4a2b');
+    g.fillStyle = cg;
+    g.fillRect(cx - colW, canopyY, colW * 2, platY - canopyY);
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 2.5;
+    g.strokeRect(cx - colW, canopyY, colW * 2, platY - canopyY);
+    for (let i = 0; i < 3; i++) {   // mirror panels
+      const py2 = canopyY + (platY - canopyY) * (0.12 + i * 0.3);
+      g.fillStyle = 'rgba(180,220,255,0.35)';
+      g.fillRect(cx - colW * 0.6, py2, colW * 1.2, (platY - canopyY) * 0.2);
+      g.strokeStyle = '#ffd23f'; g.lineWidth = 1.5;
+      g.strokeRect(cx - colW * 0.6, py2, colW * 1.2, (platY - canopyY) * 0.2);
     }
+    for (const r of riders) if (r.depth >= 0) drawRider(r);    // near side over the column
+
+    // --- canopy (drawn last: it caps the whole ride) ---
+    const canR = W * 0.48, domeH = H * 0.105, canTop = canopyY - domeH;
+    g.save();
+    g.beginPath(); g.ellipse(cx, canopyY, canR, domeH, 0, Math.PI, TAU); g.closePath(); g.clip();
+    const SEG = 14;
+    for (let i = 0; i < SEG; i++) {            // candy stripes fanning from the crown
+      g.fillStyle = i % 2 ? '#d63a3a' : '#f7f0e4';
+      const x0 = cx - canR + (2 * canR) * (i / SEG), x1 = cx - canR + (2 * canR) * ((i + 1) / SEG);
+      g.beginPath();
+      g.moveTo(cx, canTop - domeH * 0.35);     // apex above the dome → true fan
+      g.lineTo(x0, canopyY + 2); g.lineTo(x1, canopyY + 2);
+      g.closePath(); g.fill();
+    }
+    // dome shading so the canopy reads round, not flat
+    const dsh = g.createLinearGradient(0, canTop, 0, canopyY);
+    dsh.addColorStop(0, 'rgba(255,255,255,0.25)'); dsh.addColorStop(0.5, 'rgba(0,0,0,0)');
+    dsh.addColorStop(1, 'rgba(60,20,30,0.4)');
+    g.fillStyle = dsh; g.fillRect(cx - canR, canTop, canR * 2, domeH + 4);
+    g.restore();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 2.5;   // dome edge
+    g.beginPath(); g.ellipse(cx, canopyY, canR, domeH, 0, Math.PI, TAU); g.stroke();
+    // scalloped valance hanging from the rim
+    g.fillStyle = '#c02f2f';
+    const scal = 12;
+    g.beginPath(); g.moveTo(cx - canR, canopyY);
+    for (let i = 0; i < scal; i++) {
+      const x0 = cx - canR + (2 * canR) * (i / scal), x1 = cx - canR + (2 * canR) * ((i + 1) / scal);
+      g.quadraticCurveTo((x0 + x1) / 2, canopyY + H * 0.028, x1, canopyY);
+    }
+    g.lineTo(cx + canR, canopyY - H * 0.012); g.lineTo(cx - canR, canopyY - H * 0.012);
+    g.closePath(); g.fill();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(cx - canR, canopyY); g.lineTo(cx + canR, canopyY); g.stroke();
+    // bulbs along the rim
+    for (let i = 0; i <= 18; i++) {
+      const lx = cx - canR + (2 * canR) * (i / 18);
+      const tw = 0.5 + 0.5 * Math.sin(this.tt * 6 + i * 0.7);
+      g.fillStyle = 'rgba(255,240,180,' + (0.35 + tw * 0.45).toFixed(2) + ')';
+      g.beginPath(); g.arc(lx, canopyY + 2 * S, 4.5 * S, 0, TAU); g.fill();
+      g.fillStyle = '#fff8dc';
+      g.beginPath(); g.arc(lx, canopyY + 2 * S, 2.2 * S, 0, TAU); g.fill();
+    }
+    // crown finial + pennant
+    g.fillStyle = '#ffd23f'; g.strokeStyle = '#14100a'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx, canTop - 16 * S);
+    g.lineTo(cx + 10 * S, canTop + 2); g.lineTo(cx - 10 * S, canTop + 2);
+    g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.arc(cx, canTop - 20 * S, 5 * S, 0, TAU); g.fill(); g.stroke();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx, canTop - 24 * S); g.lineTo(cx, canTop - 40 * S); g.stroke();
+    g.fillStyle = '#e04040';
+    g.beginPath(); g.moveTo(cx, canTop - 40 * S);
+    g.lineTo(cx + 16 * S + Math.sin(this.tt * 3) * 3 * S, canTop - 35 * S);
+    g.lineTo(cx, canTop - 30 * S); g.closePath(); g.fill();
     g.restore();
     // ---- note highway (below the ride, above the buttons) ----
     const zoneH = H * 0.115, zoneY = H - zoneH - (this.ctx.dim.safeBottom || 0);
     const lineY = zoneY - 26;
     const zw = W / 4;
+    // darkened track so the arrows pop against the fairground
+    const trk = g.createLinearGradient(0, H * SPAWN_Y - 20, 0, lineY + 10);
+    trk.addColorStop(0, 'rgba(8,6,16,0)'); trk.addColorStop(0.18, 'rgba(8,6,16,0.72)');
+    trk.addColorStop(1, 'rgba(8,6,16,0.82)');
+    g.fillStyle = trk; g.fillRect(0, H * SPAWN_Y - 20, W, lineY + 10 - (H * SPAWN_Y - 20));
     // lane guides
-    g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 1;
+    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 1;
     for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(i * zw, H * SPAWN_Y); g.lineTo(i * zw, lineY); g.stroke(); }
     // hit line
     g.globalAlpha = 0.9;
@@ -349,20 +480,33 @@ class CarouselGame {
       g.globalAlpha = this.flash * 0.4; g.fillStyle = '#ffd23f';
       g.fillRect(0, lineY - 30, W, 60); g.globalAlpha = 1;
     }
-    g.textAlign = 'center';
-    g.font = '900 ' + Math.round(21 * Math.min(1.4, S * 1.2)) + 'px system-ui';
-    g.lineWidth = 5; g.strokeStyle = 'rgba(10,8,4,0.9)';
+    // status tucked into the dark corners either side of the dome — never over the ride
     const ridersLeft = this.alive().length;
-    const msg = this.practice ? 'PRACTICE — feel the beat!'
-      : ridersLeft <= 1 ? '🎠 LAST ONE RIDING!' : ridersLeft + ' STILL ON · SPEED ' + this.speed().toFixed(1) + 'x';
-    const top = (this.ctx.dim.safeTop || 0) + 30;
-    g.strokeText(msg, W / 2, top); g.fillStyle = '#ffd23f'; g.fillText(msg, W / 2, top);
+    const hudY = (this.ctx.dim.safeTop || 0) + 26;
+    g.lineWidth = 4; g.strokeStyle = 'rgba(10,8,4,0.9)';
+    g.font = '900 14px system-ui'; g.textAlign = 'left';
+    const left = this.practice ? 'PRACTICE' : ridersLeft + ' ON';
+    g.strokeText(left, 10, hudY); g.fillStyle = '#ffd23f'; g.fillText(left, 10, hudY);
+    g.font = '800 12px system-ui';
+    const spd = this.speed().toFixed(1) + 'x';
+    g.strokeText(spd, 10, hudY + 16); g.fillStyle = '#ffeccf'; g.fillText(spd, 10, hudY + 16);
     if (this.me) {
-      g.font = '800 13px system-ui';
-      const s2 = 'YOU: ' + this.me.hits + ' hits' + (this.me.alive ? ' · ' + (2 - this.me.misses) + ' lives' : ' · OFF');
-      g.strokeText(s2, W / 2, top + 22); g.fillStyle = this.me.alive ? '#ffeccf' : '#ff8a8a';
-      g.fillText(s2, W / 2, top + 22);
+      g.textAlign = 'right';
+      g.font = '900 14px system-ui';
+      const hearts = this.me.alive ? '♥'.repeat(Math.max(0, 2 - this.me.misses)) : 'OFF';
+      g.strokeText(hearts, W - 10, hudY); g.fillStyle = this.me.alive ? '#ff8a8a' : '#6b7488';
+      g.fillText(hearts, W - 10, hudY);
+      g.font = '800 12px system-ui';
+      const hs = this.me.hits + ' hits';
+      g.strokeText(hs, W - 10, hudY + 16); g.fillStyle = '#ffeccf'; g.fillText(hs, W - 10, hudY + 16);
     }
+    // the big call-out only when it matters
+    if (ridersLeft <= 1 && !this.practice) {
+      g.textAlign = 'center'; g.font = '900 ' + Math.round(20 * Math.min(1.4, S * 1.2)) + 'px system-ui';
+      g.strokeText('🎠 LAST ONE RIDING!', W / 2, H * SPAWN_Y - 14);
+      g.fillStyle = '#ffd23f'; g.fillText('🎠 LAST ONE RIDING!', W / 2, H * SPAWN_Y - 14);
+    }
+    g.textAlign = 'center';
     for (const q of this.pops) {
       const f = 1 - q.t / q.dur;
       g.globalAlpha = Math.min(1, f * 2);
@@ -381,36 +525,135 @@ class CarouselGame {
       }
     }
   }
-  drawHorse(g, x, y, sc, col) {
-    g.save(); g.translate(x, y); g.scale(sc, sc);
-    g.strokeStyle = '#14100a'; g.lineWidth = 2;
-    g.fillStyle = '#f2ece2';
-    // body
-    g.beginPath(); g.ellipse(0, 0, 20, 11, 0, 0, TAU); g.fill(); g.stroke();
-    // neck + head
-    g.beginPath();
-    g.moveTo(11, -5); g.quadraticCurveTo(21, -14, 19, -22);
-    g.lineTo(26, -23); g.quadraticCurveTo(28, -14, 22, -6);
-    g.closePath(); g.fill(); g.stroke();
-    // mane + tail in the rider's color
+  /* A proper carousel horse: arched neck, carved mane, prancing legs, ornate
+     saddle and bridle. Drawn facing +x, mirrored by `dir` for the far side. */
+  drawHorse(g, x, y, sc, col, dir, seat) {
+    const gal = Math.sin(this.spin * 2.6 + seat * 1.4);   // prance cycle
+    g.save(); g.translate(x, y); g.scale(sc * (dir || 1), sc);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    const OUT = '#2b2018';
+    // ---------- tail (behind everything) ----------
     g.fillStyle = col;
-    g.beginPath(); g.moveTo(14, -12); g.quadraticCurveTo(10, -20, 16, -24);
-    g.quadraticCurveTo(20, -18, 20, -10); g.closePath(); g.fill();
-    g.beginPath(); g.moveTo(-19, -3); g.quadraticCurveTo(-30, -2, -27, 9);
-    g.quadraticCurveTo(-22, 3, -17, 5); g.closePath(); g.fill();
-    // legs (galloping)
-    g.strokeStyle = '#dfd6c6'; g.lineWidth = 3.4; g.lineCap = 'round';
-    const gal = Math.sin(this.spin * 4 + x) * 4;
-    g.beginPath(); g.moveTo(-10, 8); g.lineTo(-13 - gal, 20); g.stroke();
-    g.beginPath(); g.moveTo(-6, 9); g.lineTo(-3 + gal, 21); g.stroke();
-    g.beginPath(); g.moveTo(9, 8); g.lineTo(12 + gal, 20); g.stroke();
-    g.beginPath(); g.moveTo(13, 7); g.lineTo(16 - gal, 19); g.stroke();
-    // saddle
-    g.fillStyle = '#8a4a2b'; g.strokeStyle = '#14100a'; g.lineWidth = 2;
-    g.beginPath(); g.ellipse(-2, -8, 8, 4, 0, 0, TAU); g.fill(); g.stroke();
-    // eye
+    g.beginPath();
+    g.moveTo(-18, -6);
+    g.quadraticCurveTo(-33, -12, -34, 2);
+    g.quadraticCurveTo(-35, 14, -26, 20);
+    g.quadraticCurveTo(-27, 8, -20, 2);
+    g.closePath(); g.fill();
+    g.strokeStyle = OUT; g.lineWidth = 1.6; g.stroke();
+    // ---------- far legs (darker, behind the body) ----------
+    const legFar = '#cfc3ae';
+    g.strokeStyle = legFar; g.lineWidth = 4.2;
+    // far foreleg: tucked up
+    g.beginPath(); g.moveTo(9, 3);
+    g.quadraticCurveTo(17 + gal * 2, 8, 13 + gal * 3, 15); g.stroke();
+    // far hind leg: extended back
+    g.beginPath(); g.moveTo(-11, 3);
+    g.quadraticCurveTo(-19 - gal * 2, 10, -22 - gal * 3, 19); g.stroke();
+    // ---------- body ----------
+    const bodyG = g.createLinearGradient(0, -12, 0, 12);
+    bodyG.addColorStop(0, '#ffffff'); bodyG.addColorStop(0.55, '#f4ece0'); bodyG.addColorStop(1, '#d9cdb8');
+    g.fillStyle = bodyG; g.strokeStyle = OUT; g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(-17, -4);                                   // croup
+    g.quadraticCurveTo(-16, -11, -6, -12);               // back
+    g.quadraticCurveTo(4, -13, 10, -9);                  // withers
+    g.quadraticCurveTo(17, -6, 16, 1);                   // chest
+    g.quadraticCurveTo(15, 9, 6, 10);                    // belly front
+    g.quadraticCurveTo(-6, 12, -14, 8);                  // belly back
+    g.quadraticCurveTo(-19, 4, -17, -4);
+    g.closePath(); g.fill(); g.stroke();
+    // ---------- neck + head ----------
+    g.fillStyle = bodyG; g.strokeStyle = OUT; g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(8, -9);
+    g.quadraticCurveTo(15, -20, 20, -27);                // arched crest
+    g.quadraticCurveTo(24, -32, 29, -30);                // poll
+    g.quadraticCurveTo(33, -28, 32, -23);                // forehead → muzzle
+    g.quadraticCurveTo(31, -19, 26, -19);                // nose
+    g.quadraticCurveTo(22, -19, 20, -15);                // jaw
+    g.quadraticCurveTo(17, -8, 15, -6);                  // throat
+    g.closePath(); g.fill(); g.stroke();
+    // ears
+    g.beginPath(); g.moveTo(27, -30); g.lineTo(28.5, -35); g.lineTo(30.5, -29.5);
+    g.closePath(); g.fill(); g.stroke();
+    // nostril + mouth
+    g.fillStyle = '#8a7566';
+    g.beginPath(); g.ellipse(28.5, -21, 1.1, 0.8, 0.3, 0, TAU); g.fill();
+    g.strokeStyle = '#8a7566'; g.lineWidth = 0.9;
+    g.beginPath(); g.moveTo(26.5, -19.6); g.lineTo(30, -20.2); g.stroke();
+    // eye (with highlight)
     g.fillStyle = '#14100a';
-    g.beginPath(); g.arc(22, -18, 1.4, 0, TAU); g.fill();
+    g.beginPath(); g.ellipse(26.5, -26.5, 1.7, 1.9, 0, 0, TAU); g.fill();
+    g.fillStyle = '#fff';
+    g.beginPath(); g.arc(27, -27.2, 0.6, 0, TAU); g.fill();
+    // ---------- carved mane in the rider's colour ----------
+    g.fillStyle = col; g.strokeStyle = OUT; g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(9, -10);
+    g.quadraticCurveTo(15, -22, 21, -29);                // follows the crest
+    g.quadraticCurveTo(25, -33, 27, -31);
+    g.quadraticCurveTo(23, -28, 20, -22);                // scalloped locks
+    g.quadraticCurveTo(23, -23, 25, -21);
+    g.quadraticCurveTo(19, -19, 17, -14);
+    g.quadraticCurveTo(20, -15, 21, -13);
+    g.quadraticCurveTo(14, -11, 11, -7);
+    g.closePath(); g.fill(); g.stroke();
+    // forelock
+    g.beginPath(); g.moveTo(29, -30); g.quadraticCurveTo(33, -28, 32, -24);
+    g.quadraticCurveTo(30, -27, 28, -28); g.closePath(); g.fill();
+    // ---------- bridle ----------
+    g.strokeStyle = '#c0392b'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(23, -27.5); g.quadraticCurveTo(26, -24, 24.5, -20); g.stroke();
+    g.beginPath(); g.moveTo(21, -22); g.lineTo(29, -23.5); g.stroke();
+    g.fillStyle = '#ffd23f';
+    g.beginPath(); g.arc(24.5, -23, 1.3, 0, TAU); g.fill();
+    // reins back to the saddle
+    g.strokeStyle = '#8a4a2b'; g.lineWidth = 1.1;
+    g.beginPath(); g.moveTo(23.5, -21.5); g.quadraticCurveTo(16, -16, 6, -12); g.stroke();
+    // ---------- saddle + blanket ----------
+    g.fillStyle = '#2f6fb0'; g.strokeStyle = OUT; g.lineWidth = 1.6;
+    g.beginPath();                                        // blanket
+    g.moveTo(-12, -8); g.lineTo(4, -11); g.lineTo(6, -2); g.lineTo(-11, 1);
+    g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#ffd23f';                              // blanket trim
+    for (let i = 0; i < 4; i++) {
+      g.beginPath(); g.arc(-10 + i * 4.6, 0.2 + i * -0.7, 1, 0, TAU); g.fill();
+    }
+    g.fillStyle = '#8a4a2b'; g.strokeStyle = OUT; g.lineWidth = 1.8;
+    g.beginPath();                                        // saddle seat
+    g.moveTo(-8, -10);
+    g.quadraticCurveTo(-3, -14, 3, -12);                  // cantle → pommel
+    g.quadraticCurveTo(6, -11, 5, -8);
+    g.quadraticCurveTo(-2, -6, -8, -7);
+    g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#ffd23f';                              // pommel knob
+    g.beginPath(); g.arc(3.5, -12.5, 1.6, 0, TAU); g.fill(); g.stroke();
+    // stirrup
+    g.strokeStyle = '#8a4a2b'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(-2, -7); g.lineTo(-1, 2); g.stroke();
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(-1, 3.4, 2, 0, Math.PI); g.stroke();
+    // ---------- near legs ----------
+    g.strokeStyle = '#f4ece0'; g.lineWidth = 5;
+    // near foreleg: high tuck (the classic prancer)
+    g.beginPath(); g.moveTo(11, 4);
+    g.quadraticCurveTo(20 + gal * 2, 6, 18 + gal * 3, 13);
+    g.stroke();
+    g.strokeStyle = '#2b2018'; g.lineWidth = 1.2;         // hoof
+    g.beginPath(); g.moveTo(16 + gal * 3, 13); g.lineTo(20 + gal * 3, 14.5); g.stroke();
+    // near hind leg: driving back
+    g.strokeStyle = '#f4ece0'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(-13, 4);
+    g.quadraticCurveTo(-22 - gal * 2, 8, -25 - gal * 3, 17);
+    g.stroke();
+    g.strokeStyle = '#2b2018'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(-27 - gal * 3, 17); g.lineTo(-23 - gal * 3, 18.5); g.stroke();
+    // ---------- painted rosettes ----------
+    g.fillStyle = col;
+    g.beginPath(); g.arc(-13, -1, 2.4, 0, TAU); g.fill();
+    g.fillStyle = '#ffd23f';
+    g.beginPath(); g.arc(-13, -1, 1.1, 0, TAU); g.fill();
     g.restore();
   }
   // canvas taps land in the bottom zones
