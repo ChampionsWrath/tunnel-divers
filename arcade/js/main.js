@@ -1,26 +1,30 @@
 // Divers Arcade shell: home → lobby → game(s) → results.
 // "Board Game" mode = gauntlet of all minigames with placement points (real board TBD).
 // bump ?v= on any module edit — defeats stale module caches (embedded webviews, PWAs)
-import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=32';
-import * as audio from './audio.js?v=32';
-import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=32';
-import { Net, makeRoomCode } from './net.js?v=32';
-import tunnel from './games/tunnel.js?v=32';
-import stack from './games/stack.js?v=32';
-import crown from './games/crown.js?v=32';
-import brain from './games/brain.js?v=32';
-import blast from './games/blast.js?v=32';
-import food from './games/food.js?v=32';
-import homerun from './games/homerun.js?v=32';
-import trivia from './games/trivia.js?v=32';
-import ghost from './games/ghost.js?v=32';
-import greed from './games/greed.js?v=32';
-import lava from './games/lava.js?v=32';
-import rush from './games/rush.js?v=32';
-import { createBoard } from './board.js?v=32';
-import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=32';
+import { clamp, lsGet, lsSet, uid, mulberry32, PLAYER_COLORS } from './util.js?v=33';
+import * as audio from './audio.js?v=33';
+import { getInput, attachTouch, clearTouch, ctl, setCtl, askTiltPerm, calibrateTilt, tiltStatus, setTiltOrient, getTiltOrient } from './input.js?v=33';
+import { Net, makeRoomCode } from './net.js?v=33';
+import tunnel from './games/tunnel.js?v=33';
+import stack from './games/stack.js?v=33';
+import crown from './games/crown.js?v=33';
+import brain from './games/brain.js?v=33';
+import blast from './games/blast.js?v=33';
+import food from './games/food.js?v=33';
+import homerun from './games/homerun.js?v=33';
+import trivia from './games/trivia.js?v=33';
+import ghost from './games/ghost.js?v=33';
+import greed from './games/greed.js?v=33';
+import lava from './games/lava.js?v=33';
+import rush from './games/rush.js?v=33';
+import carousel from './games/carousel.js?v=33';
+import { createBoard } from './board.js?v=33';
+import { drawDiverStand, WARDROBE, migrateWard, DEF_HAIR_COL, DEF_FACE_COL } from './character.js?v=33';
 
-const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush };
+const GAMES = { tunnel, stack, crown, brain, blast, food, homerun, trivia, ghost, greed, lava, rush, carousel };
+// the carousel is reachable ONLY from the board's 🎠 space — never in the
+// random rotation and not pickable as a standalone mode
+const DECK_GAMES = Object.keys(GAMES).filter(k => k !== 'carousel');
 const MODES = [
   { id: 'party', name: 'Board Game', icon: '🎲', desc: 'THE CHAOTIC BOARDWALK — dice, coins, shops, piñatas, item cards, cosmetic steals… and a minigame every turn. Highest coins+cosmetics wins.' },
   { id: 'tunnel', name: tunnel.name, icon: tunnel.icon, desc: tunnel.desc },
@@ -37,7 +41,7 @@ const MODES = [
   { id: 'rush', name: rush.name, icon: rush.icon, desc: rush.desc },
 ];
 
-const BUILD = 32;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
+const BUILD = 33;   // bump with ?v= — shown on the home screen so mismatched phones are obvious
 const $ = id => document.getElementById(id);
 const cv = $('game'), g = cv.getContext('2d');
 const dim = { W: 0, H: 0, V: 1 };
@@ -468,7 +472,7 @@ function startBoard(seed, players) {
     input: getInput,
     audio: { sfx: audio.sfx, setMusicIntensity: audio.setMusicIntensity },
     maxTurns: S.boardTurns || 20,
-    gameIds: Object.keys(GAMES),
+    gameIds: DECK_GAMES,
     launchMinigame: (gid, sd) => {
       S.boardStash = S.boardObj;       // pause the board; the minigame takes the stage
       startGame(gid, sd, S.boardObj.players.map(p => ({ ...p })));

@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=32';
+import { drawDiverTop, drawDiverStand } from './character.js?v=33';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -83,7 +83,7 @@ function buildMap() {
     ['blue', 35, 36],    // 28 (merge: shore shortcut lands here)
     ['red', 39, 26],     // 29
     // right midway (down through the park):  15 → 30..33 → 7
-    ['blue', 78, 24],    // 30
+    ['carousel', 78, 24],// 30  🎠 the merry-go-round (bet + rhythm showdown)
     ['shop', 74, 34],    // 31
     ['red', 79, 44],     // 32
     ['blue', 75, 54],    // 33 (merge: pier cut lands here)
@@ -119,7 +119,9 @@ const NODE_STYLE = {
   start: ['#ffd23f', '🏁'], blue: ['#4d9de0', '+3'], red: ['#e04040', '-3'], fork: ['#93a0bd', '⑂'],
   shop: ['#a1e887', '🛒'], pinata: ['#e08bd0', '🪅'], mascot: ['#ffb84d', '🎭'],
   warp: ['#59d9ff', '🌀'],
+  carousel: ['#e08bd0', '🎠'],
 };
+const BET_WHEEL = [5, 10, 15, 20, 25, 30];   // the wheel's coin wedges
 const PREV_COLS = ['#ffd23f', '#59d9ff', '#e08bd0'];   // branch-choice colors: button ↔ path ↔ pin
 
 /* ================================================================ */
@@ -295,6 +297,8 @@ class Board {
       case 'mascot': this.doMascot(d.bet, d.win); break;
       case 'steal': this.doSteal(d.victim, d.ci); break;
       case 'pinata2': this.applyPinata(d.c); break;
+      case 'wheel': this.doWheel(d.bet); break;
+      case 'cpay': this.doCarouselPayout(d.winner, d.bet); break;
       case 'mg': if (remote) this.launchMg(d.gid, d.seed, true); break;
       case 'rw': if (remote) this.applyRewards(d.list, d.rows); break;
       case 'sync': if (remote) this.applySync(d); break;
@@ -471,6 +475,13 @@ class Board {
         if (p.coins < 5) { this.pop('🎭 The mascot wants 5 🪙 you don\'t have…', '#93a0bd'); this.endPlayerTurn(1); }
         else { this.overlay = { kind: 'mascot', t: 0 }; this.botT = 1.2 + this.rng(); }
         break;
+      case 'carousel': {
+        // spin for the stake, then EVERYONE rides — winner takes the pot
+        this.overlay = { kind: 'wheel', t: 0, spin: 0, picked: null };
+        this.botT = 1.1 + this.rng();
+        this.ctx.audio.sfx.ui();
+        break;
+      }
       case 'warp': {
         // human cannonball! blast off to the twin cannon across the park.
         // fully deterministic (fixed pairs) — every client animates the same.
@@ -483,6 +494,36 @@ class Board {
       }
       default: this.endPlayerTurn(0.8);
     }
+  }
+  /* -------- 🎠 MERRY-GO-ROUND: wheel → ride → pot -------- */
+  doWheel(bet) {
+    this.carouselBet = bet;
+    if (this.overlay && this.overlay.kind === 'wheel') { this.overlay.picked = bet; this.overlay.t = 0; }
+    this.ctx.audio.sfx.win();
+  }
+  startCarousel() {
+    this.overlay = null;
+    this.pendingMg = { gid: 'carousel', seed: (this.ctx.seed ^ (this.turn * 5471) ^ (this.playerIdx * 97)) >>> 0 };
+    this.mgLaunched = false;
+    this.carouselPending = true;      // results route to the pot, not the usual rewards
+    this.state = 'mgIntro'; this.stateT = 0;
+  }
+  doCarouselPayout(winnerId, bet) {
+    const win = this.players.find(p => p.id === winnerId);
+    let pot = 0;
+    for (const p of this.players) {
+      if (!win || p.id === winnerId) continue;
+      const take = Math.min(bet, p.coins);   // can't take what they don't have
+      p.coins -= take; pot += take;
+    }
+    if (win) {
+      win.coins += pot;
+      this.showBanner('🎠 ' + win.name + ' TAKES ' + pot + '🪙!', win.color, 2.4);
+      this.pop('🎠 ' + win.name + ' wins the ride! +' + pot + '🪙', '#ffd23f', 24);
+      this.ctx.audio.sfx.win();
+    }
+    this.carouselBet = null; this.carouselPending = false;
+    this.endPlayerTurn(1.4);
   }
   // piñata resolution comes through act stream for sync
   applyPinata(cid) {
@@ -567,6 +608,17 @@ class Board {
 
   /* -------- the spec hook: minigame results → coins → next turn -------- */
   onMinigameComplete(resultsArray, gameId) {
+    // the carousel isn't a normal round — its winner collects the ante pot
+    if (gameId === 'carousel' && this.carouselPending) {
+      this.mgLaunched = false; this.pendingMg = null;
+      const bet = this.carouselBet || 10;
+      if (this.authority()) {
+        const first = resultsArray.find(r => r.rank === 1) ||
+          [...resultsArray].sort((a, b) => b.score - a.score)[0];
+        this.act('cpay', { winner: first ? first.playerId : null, bet });
+      }
+      return;
+    }
     if (this.isNetHost) {
       const list = {};
       const dyn = DYNAMIC[gameId];
@@ -898,6 +950,21 @@ class Board {
           this.act('roll', { v: +hit.id.slice(2) });
         }
       } else this.overlay = null;
+      return;
+    }
+    if (o.kind === 'wheel') {
+      o.spin += rdt * (o.picked == null ? 7 : 0.6);
+      if (o.picked == null) {
+        // spin: the lander taps to stop it (bots stop on their own)
+        const stop = (p.bot && auth && (this.botT -= rdt) <= 0) ||
+          (this.myTurn() && (this.hitButton(clicks) || clicks.length));
+        if (stop && auth) {
+          const bet = BET_WHEEL[Math.floor(this.rng() * BET_WHEEL.length)];
+          this.act('wheel', { bet });
+        }
+      } else if (o.t > 1.9) {
+        this.startCarousel();          // everyone to the horses
+      }
       return;
     }
     if (o.kind === 'items') {
@@ -1737,6 +1804,41 @@ class Board {
   drawOverlay(g, W, H) {
     const o = this.overlay, p = this.cur(), mine = this.myTurn();
     const bw = Math.min(360, W * 0.88), bx = W / 2 - bw / 2, by = H * 0.2;
+    if (o.kind === 'wheel') {
+      const cx2 = W / 2, cy2 = H * 0.42, R = Math.min(W * 0.34, H * 0.2);
+      g.fillStyle = 'rgba(6,7,13,0.82)'; g.fillRect(0, 0, W, H);
+      g.font = '900 21px system-ui'; g.textAlign = 'center'; g.fillStyle = '#ffd23f';
+      g.fillText('🎠 MERRY-GO-ROUND!', cx2, cy2 - R - 42);
+      g.font = '700 13px system-ui'; g.fillStyle = '#ffeccf';
+      g.fillText(o.picked == null ? (mine ? 'TAP to stop the wheel — that\'s the stake' : p.name + ' is spinning…')
+        : 'EVERY rider antes ' + o.picked + '🪙 — winner takes it all!', cx2, cy2 - R - 20);
+      // the wheel
+      g.save(); g.translate(cx2, cy2); g.rotate(o.spin);
+      BET_WHEEL.forEach((v, i) => {
+        const a0 = i / BET_WHEEL.length * TAU, a1 = (i + 1) / BET_WHEEL.length * TAU;
+        g.fillStyle = ['#e04040', '#4d9de0', '#3a9d5c', '#ffd23f', '#e08bd0', '#ffb84d'][i % 6];
+        g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R, a0, a1); g.closePath(); g.fill();
+        g.strokeStyle = '#14100a'; g.lineWidth = 2.5; g.stroke();
+        g.save(); g.rotate((a0 + a1) / 2); g.translate(R * 0.64, 0); g.rotate(Math.PI / 2);
+        g.fillStyle = '#14100a'; g.font = '900 ' + Math.round(R * 0.22) + 'px system-ui';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(v + '', 0, 0); g.textBaseline = 'alphabetic';
+        g.restore();
+      });
+      g.restore();
+      g.fillStyle = '#f2ece2'; g.strokeStyle = '#14100a'; g.lineWidth = 3;
+      g.beginPath(); g.arc(cx2, cy2, R * 0.17, 0, TAU); g.fill(); g.stroke();
+      g.fillStyle = '#ffd23f';                          // pointer
+      g.beginPath(); g.moveTo(cx2, cy2 - R - 14); g.lineTo(cx2 - 12, cy2 - R + 8);
+      g.lineTo(cx2 + 12, cy2 - R + 8); g.closePath(); g.fill(); g.stroke();
+      if (o.picked != null) {
+        g.font = '900 ' + Math.round(34) + 'px system-ui'; g.textAlign = 'center';
+        g.lineWidth = 5; g.strokeStyle = 'rgba(10,8,4,0.9)';
+        g.strokeText(o.picked + ' 🪙 EACH!', cx2, cy2 + R + 52);
+        g.fillStyle = '#7dff6a'; g.fillText(o.picked + ' 🪙 EACH!', cx2, cy2 + R + 52);
+      }
+      return;
+    }
     if (o.kind === 'pickroll') {
       const bh = 150;
       g.fillStyle = 'rgba(10,8,16,0.92)'; g.fillRect(bx, by, bw, bh);

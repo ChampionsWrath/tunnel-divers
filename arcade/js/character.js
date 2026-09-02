@@ -516,6 +516,10 @@ export function drawDiverStand(g, o) {
   const skinV = o.skin == null ? 35 : o.skin;
   const skinC = skinTone(skinV), skinD = skinShade(skinV, 0.82);
   g.save(); g.translate(o.x, o.y); g.scale(o.scale, o.scale);
+  // TRICKS (carousel showing-off): 1 = handstand, 2 = side lean, 3 = spin
+  if (o.trick === 1) { g.translate(0, -6); g.rotate(Math.PI); g.translate(0, -22); }
+  else if (o.trick === 2) { g.rotate(Math.sin((o.t || 0) * 5) * 0.5); }
+  else if (o.trick === 3) { g.rotate((o.t || 0) * 5 % TAU); }
   const bob = Math.sin((o.t || 0) * 2.6) * 1.4;
   const cheer = o.mood === 'cheer' ? Math.abs(Math.sin((o.t || 0) * 8)) * 6 : 0;
   g.translate(0, bob - cheer);
