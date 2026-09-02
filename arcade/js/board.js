@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=37';
+import { drawDiverTop, drawDiverStand } from './character.js?v=38';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -460,7 +460,7 @@ class Board {
     }
     const c = victim.cosmetics.splice(ci, 1)[0];
     p.cosmetics.push(c);
-    this.pop('💥 SPLAT! Stole ' + cosmetic(c).icon + ' ' + cosmetic(c).name + '!', '#ff5f5f', 24);
+    this.pop('💥 SPLAT! Stole ' + cosmetic(c).icon + ' ' + cosmetic(c).name + ' (' + cosmetic(c).value + 'pts)!', '#ff5f5f', 24);
     this.ctx.audio.sfx.crash();
     this.checkCollectionWin();
   }
@@ -567,7 +567,7 @@ class Board {
       const opts = COSMETICS.filter(c => c.tier === pool);
       const c = opts[Math.floor(this.rng() * opts.length)];
       p.cosmetics.push(c.id);
-      this.pop('🎭 WIN! ' + c.icon + ' ' + c.name + '!', '#ffd23f', 26);
+      this.pop('🎭 WIN! ' + c.icon + ' ' + c.name + ' (' + c.value + 'pts)!', '#ffd23f', 26);
       this.ctx.audio.sfx.win();
       this.checkCollectionWin();
     } else {
@@ -801,6 +801,21 @@ class Board {
         clicks.length = 0;
       }
     }
+    /* COLLECTION PANEL — a purely local info card (kept off this.overlay so it
+       never gates the state machine or anyone else's turn). Tap a score card
+       to open it, tap anywhere to close; taps never fall through to the board. */
+    if (this.tut == null && clicks.length) {
+      if (this.panel) {
+        this.panel = null; this.ctx.audio.sfx.ui(); clicks.length = 0;
+      } else {
+        const ch2 = this.hitButton(clicks);
+        if (ch2 && ch2.id.startsWith('chip')) {
+          this.panel = { kind: 'collection', who: +ch2.id.slice(4), t: 0 };
+          this.ctx.audio.sfx.ui(); clicks.length = 0;
+        }
+      }
+    }
+    if (this.panel) this.panel.t += rdt;
     const inp = this.myTurn() ? this.ctx.input(p.slot, rdt) : { act: false };
     // overlays (shop/mascot/piñata) pause whatever else is happening — including
     // mid-movement shop stops — and must resolve before the walk continues
@@ -1400,6 +1415,7 @@ class Board {
       g.fillRect(-c.s / 2, -c.s / 3, c.s, c.s * 0.66);
       g.restore();
     }
+    if (this.panel) this.drawPanel(g, W, H);
     if (this.tut != null) this.drawTutorial(g, W, H);
   }
   drawTutorial(g, W, H) {
@@ -1664,6 +1680,10 @@ class Board {
       g.textAlign = 'right'; g.font = '900 11px system-ui';
       g.fillStyle = ['#ffd23f', '#c9d4dc', '#c9803a', '#93a0bd'][rank] || '#93a0bd';
       g.fillText(['1st', '2nd', '3rd', '4th'][rank] || (rank + 1) + 'th', x + cw - 5, y + 15);
+      // tap a card to inspect that player's collection
+      this.buttons.push({ id: 'chip' + i, x, y, w: cw, h: ch });
+      g.fillStyle = 'rgba(255,236,207,0.35)'; g.font = '700 8px system-ui'; g.textAlign = 'right';
+      g.fillText('tap', x + cw - 5, y + ch - 5);
     });
     g.textAlign = 'right'; g.font = '800 13px system-ui'; g.fillStyle = '#ffeccf';
     g.fillText('TURN ' + Math.min(this.turn, this.maxTurns) + '/' + this.maxTurns,
@@ -1833,6 +1853,64 @@ class Board {
       g.fillText((i + 1) + '. ' + p2.name + ' — 🎁' + this.setCount(p2) + '/' + COSMETICS.length +
         '  (' + this.score(p2) + ' pts)', W / 2, sy + 38 + i * 16);
     });
+  }
+  /* the tapped player's collection: every cosmetic, owned ones lit with their
+     value, missing ones greyed out — so you can see exactly what's left */
+  drawPanel(g, W, H) {
+    const p = this.players[this.panel.who];
+    if (!p) { this.panel = null; return; }
+    const owned = new Set(p.cosmetics);
+    const rowH = 34, pad = 14;
+    const bw = Math.min(340, W * 0.9);
+    const bh = 96 + COSMETICS.length * rowH + 34;
+    const bx = W / 2 - bw / 2, by = Math.max((this.ctx.dim.safeTop || 0) + 56, H / 2 - bh / 2);
+    g.fillStyle = 'rgba(6,7,13,0.82)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#101624'; g.strokeStyle = p.color; g.lineWidth = 3;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(bx, by, bw, bh, 16); else g.rect(bx, by, bw, bh);
+    g.fill(); g.stroke();
+    // header: who, and how far along they are
+    drawDiverTop(g, { x: bx + 30, y: by + 30, r: 15, color: p.color, t: this.tt, speedNorm: 0, cos: p.cosmetics, ward: p.ward, skin: p.skin });
+    g.textAlign = 'left'; g.font = '900 18px system-ui'; g.fillStyle = p.color;
+    g.fillText(p.name, bx + 54, by + 26);
+    g.font = '800 12px system-ui'; g.fillStyle = '#ffeccf';
+    const val = p.cosmetics.reduce((a, c) => a + cosmetic(c).value, 0);
+    g.fillText('🎁 ' + this.setCount(p) + '/' + COSMETICS.length + ' collected  ·  🪙' + p.coins + '  ·  ' + (p.coins + val) + ' pts',
+      bx + 54, by + 44);
+    // progress bar toward the full set
+    const pbW = bw - pad * 2, pbY = by + 58;
+    g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(bx + pad, pbY, pbW, 8);
+    g.fillStyle = '#7dff6a';
+    g.fillRect(bx + pad, pbY, pbW * (this.setCount(p) / COSMETICS.length), 8);
+    g.strokeStyle = '#2a3450'; g.lineWidth = 1.5; g.strokeRect(bx + pad, pbY, pbW, 8);
+    // the full checklist
+    let yy = by + 84;
+    for (const c of COSMETICS) {
+      const has = owned.has(c.id);
+      const dupes = p.cosmetics.filter(q => q === c.id).length;
+      g.fillStyle = has ? 'rgba(40,52,30,0.85)' : 'rgba(20,24,36,0.7)';
+      g.fillRect(bx + pad, yy, pbW, rowH - 6);
+      g.strokeStyle = has ? '#7dff6a' : '#2a3450'; g.lineWidth = 1.5;
+      g.strokeRect(bx + pad, yy, pbW, rowH - 6);
+      g.globalAlpha = has ? 1 : 0.42;                    // missing = greyed out
+      g.font = '18px serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillStyle = '#fff';
+      g.fillText(c.icon, bx + pad + 8, yy + (rowH - 6) / 2);
+      g.font = '800 12.5px system-ui';
+      g.fillStyle = has ? '#ffeccf' : '#93a0bd';
+      g.fillText(c.name + (dupes > 1 ? '  ×' + dupes : ''), bx + pad + 34, yy + (rowH - 6) / 2);
+      g.textAlign = 'right';
+      g.font = '900 12.5px system-ui';
+      g.fillStyle = has ? '#ffd23f' : '#5c6780';
+      g.fillText(c.value + ' pts', bx + pad + pbW - 40, yy + (rowH - 6) / 2);
+      g.font = '800 11px system-ui';
+      g.fillStyle = has ? '#7dff6a' : '#5c6780';
+      g.fillText(has ? '✓' : '—', bx + pad + pbW - 10, yy + (rowH - 6) / 2);
+      g.globalAlpha = 1; g.textBaseline = 'alphabetic';
+      yy += rowH;
+    }
+    g.textAlign = 'center'; g.font = '800 12px system-ui'; g.fillStyle = '#93a0bd';
+    g.fillText('tap anywhere to close', W / 2, by + bh - 12);
   }
   drawOverlay(g, W, H) {
     const o = this.overlay, p = this.cur(), mine = this.myTurn();
