@@ -508,6 +508,36 @@ function drawWardHatTop(g, hat, r) {
   }
 }
 
+/* GIANT NOVELTY GLASSES — the ring-toss grand prize. Deliberately far too big
+   for the head (lenses overhang the ears) so it reads instantly at board size. */
+function drawGiantGlasses(g, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  const R = 6.4, SX = 6.6;
+  g.strokeStyle = OUTLINE; g.lineWidth = 1.6;
+  // temple arms sweeping back to the ears
+  g.beginPath(); g.moveTo(-SX - R + 0.6, -0.6); g.lineTo(-11.4, -2.4); g.stroke();
+  g.beginPath(); g.moveTo(SX + R - 0.6, -0.6); g.lineTo(11.4, -2.4); g.stroke();
+  // lenses: tinted glass with a bright diagonal glint
+  for (const sd of [-1, 1]) {
+    const cx = sd * SX;
+    g.fillStyle = 'rgba(150,225,255,0.5)';
+    g.beginPath(); g.ellipse(cx, 0, R, R * 0.92, 0, 0, TAU); g.fill();
+    g.strokeStyle = '#1f2a44'; g.lineWidth = 2.2;
+    g.beginPath(); g.ellipse(cx, 0, R, R * 0.92, 0, 0, TAU); g.stroke();
+    g.save();
+    g.beginPath(); g.ellipse(cx, 0, R - 0.6, R * 0.92 - 0.6, 0, 0, TAU); g.clip();
+    g.fillStyle = 'rgba(255,255,255,0.75)';
+    g.beginPath();
+    g.moveTo(cx - R, R * 0.5); g.lineTo(cx - R * 0.1, -R); g.lineTo(cx + R * 0.5, -R);
+    g.lineTo(cx - R * 0.5, R * 0.9); g.closePath(); g.fill();
+    g.restore();
+  }
+  // bridge over the nose
+  g.strokeStyle = '#1f2a44'; g.lineWidth = 2.2;
+  g.beginPath(); g.moveTo(-SX + R - 0.4, -1.4); g.quadraticCurveTo(0, -3.4, SX - R + 0.4, -1.4); g.stroke();
+  g.restore();
+}
+
 /* full standing front view — THE board model. Local units: ~56 tall, feet at y=28.
    o: {x, y, scale, color, t, cos?: string[], ward?: {hat,face}, skin?: 0-100,
        mood?: 'idle'|'cheer'} */
@@ -683,6 +713,7 @@ export function drawDiverStand(g, o) {
     g.fillStyle = 'rgba(255,255,255,0.75)';
     g.beginPath(); g.arc(-0.8, -16.2, 0.8, 0, TAU); g.fill();
   }
+  if (cos.includes('glasses')) drawGiantGlasses(g, 0, -18.4, 1);
   // hair first (colored), then headwear over it (earned crown > earned prop > hat)
   drawHairFront(g, ward.hair, ward.hairCol || DEF_HAIR_COL, 0, -17, 10, o.t);
   const hw = headwear(cos, ward);

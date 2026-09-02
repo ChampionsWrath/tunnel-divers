@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=41';
+import { drawDiverTop, drawDiverStand } from './character.js?v=42';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -38,8 +38,13 @@ export const COSMETICS = [
   { id: 'burger', name: 'Burger Mask', icon: '🍔', tier: 'rare', value: 25 },
   { id: 'crown', name: 'Golden Textured Crown', icon: '👑', tier: 'legendary', value: 60 },
   { id: 'boots', name: 'Mech Boots', icon: '🦿', tier: 'legendary', value: 60 },
+  // THE PRIZE: not in any random pool and not stealable — the ONLY way to get it
+  // is to out-throw everyone at the 🎯 Ring Toss space.
+  { id: 'glasses', name: 'Giant Novelty Glasses', icon: '👓', tier: 'prize', value: 75, prize: 'ringtoss' },
 ];
 const cosmetic = id => COSMETICS.find(c => c.id === id);
+// what the piñatas / mascot / mystery boxes are allowed to hand out
+const AWARDABLE = COSMETICS.filter(c => !c.prize);
 const REWARDS = [15, 10, 6, 3, 1];
 const DYNAMIC = { tunnel: s => clamp(Math.round(2 + s / 400), 2, 18), food: s => clamp(Math.round(2 + s * 0.6), 2, 18) };
 
@@ -55,7 +60,7 @@ function buildMap() {
     ['blue', 18, 66],    // 1
     ['warpA', 28, 64],   // 2  🌀 cannon ↔ 16
     ['fork', 38, 67],    // 3  ⑂ bottom fork: promenade on, or up the midway
-    ['blue', 48, 64],    // 4
+    ['fork', 48, 64],    // 4  ⑂ alley fork: promenade on, or into the ring-toss alley
     ['red', 58, 67],     // 5
     ['pinata', 68, 64],  // 6
     ['blue', 78, 66],    // 7  (merge: pier cut lands here)
@@ -92,9 +97,11 @@ function buildMap() {
     ['blue', 24, 32],    // 35
     // pier cut:  10 → 36 → 33
     ['red', 90, 50],     // 36
+    // park alley:  4 → 37 → 27  (turns node 4 into a fifth fork)
+    ['ringtoss', 50, 52],// 37  🎯 the ring-toss booth — Giant Glasses live here
   ];
   const EDGES = [
-    [0, 1], [1, 2], [2, 3], [3, 4], [3, 26], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9],
+    [0, 1], [1, 2], [2, 3], [3, 4], [3, 26], [4, 5], [4, 37], [5, 6], [6, 7], [7, 8], [8, 9],
     [9, 10], [10, 11], [10, 36], [11, 12], [12, 13], [13, 14], [14, 15], [15, 16], [15, 30],
     [16, 17], [17, 18], [18, 19], [19, 20], [20, 21], [21, 22], [22, 23], [23, 24], [23, 34],
     [24, 25], [25, 0],
@@ -102,6 +109,7 @@ function buildMap() {
     [30, 31], [31, 32], [32, 33], [33, 7],
     [34, 35], [35, 28],
     [36, 33],
+    [37, 27],
   ];
   const nodes = SPEC.map(([type, x, y], id) => ({ id, type, x, y, next: [] }));
   for (const [a, b] of EDGES) nodes[a].next.push(b);
@@ -120,6 +128,7 @@ const NODE_STYLE = {
   shop: ['#a1e887', '🛒'], pinata: ['#e08bd0', '🪅'], mascot: ['#ffb84d', '🎭'],
   warp: ['#59d9ff', '🌀'],
   carousel: ['#e08bd0', '🎠'],
+  ringtoss: ['#ffd23f', '🎯'],
 };
 const BET_WHEEL = [5, 10, 15, 20, 25, 30];   // the wheel's coin wedges
 // states where tapping a diver on the board opens his collection card: the world
@@ -142,6 +151,7 @@ class Board {
     this.players = ctx.players.map((p, i) => ({
       id: p.id, name: p.name, color: p.color, skin: p.skin, ward: p.ward, local: p.local, slot: p.slot, bot: !!p.bot,
       node: 0, coins: 15, items: [], cosmetics: [], shield: false, pending: null,
+      mboxBought: 0, mboxTurn: -1,          // Mystery Box: price climbs, one per turn
       ax: this.map[0].x, ay: this.map[0].y,   // animated position
     }));
     this.state = 'splash'; this.stateT = 0;
@@ -150,6 +160,8 @@ class Board {
     this.botT = 0; this.dice = null; this.paused = false;
     this.clicks = [];
     this.panel = null; this.pawnHits = []; this.buttons = []; this._eatAct = 0;
+    this.won = null;   // id of whoever completed the set — freezes the turn machine
+    this.carouselPending = false; this.ringPending = false;
     // free-look zoom: pinch on touch, ctrl/⌘+click or wheel on desktop.
     // userZoom multiplies the state's target zoom; 1 = default framing.
     this.userZoom = 1; this._pts = new Map(); this._pinch0 = null;
@@ -204,7 +216,7 @@ class Board {
     // in the POCKETS between paths (the map is a network now — no big open middle)
     put('tent', 20, 50, 1.2);      // between shore, shortcut and bottom row
     put('tent', 56, 24, 1);        // upper-middle pocket
-    put('carousel', 56, 48, 1.1);  // big central-lower pocket
+    put('carousel', 61, 45, 1.1);  // central pocket (clear of the ring-toss alley)
     put('balloons', 24, 20, 0.9);  // upper-left pocket
     put('popcorn', 88, 32, 0.95);  // between right midway and the pier
     put('cotton', 50, 37, 0.9);    // mid-park nook
@@ -227,13 +239,19 @@ class Board {
   // collecting the whole set ends the game on the spot
   checkCollectionWin() {
     const done = this.players.find(p => this.setCount(p) >= COSMETICS.length);
-    if (!done || this.state === 'end') return false;
+    if (!done || this.won) return false;
     this.showBanner('🎁 ' + done.name + ' COLLECTED THEM ALL!', done.color, 3);
-    this.pop('🎁 FULL SET — ' + done.name + ' WINS!', '#ffd23f', 28);
     this.ctx.audio.sfx.win();
     // clear anything that would swallow update() before the 'end' state runs
     this.overlay = null; this.destOptions = null; this.forcedPath = null;
     this.pendingMg = null; this.mgLaunched = false; this.carouselPending = false;
+    this.ringPending = false; this.moveQ.length = 0; this.rq.length = 0;
+    /* `won` is the latch. Setting state = 'end' alone was NOT enough: the code
+       that awards a cosmetic keeps running afterwards, and doMascot ends with an
+       unconditional endPlayerTurn(1.2) — so the win banner showed and then the
+       game calmly carried on to the next player. Every turn-advancing entry
+       point now checks this flag, which also covers paths added later. */
+    this.won = done.id;
     this.state = 'end'; this.stateT = 0;
     return true;
   }
@@ -326,6 +344,7 @@ class Board {
       case 'pinata2': this.applyPinata(d.c); break;
       case 'wheel': this.doWheel(d.bet); break;
       case 'cpay': this.doCarouselPayout(d.winner, d.bet); break;
+      case 'ring': this.doRingPrize(d.winner); break;
       case 'mg': if (remote) this.launchMg(d.gid, d.seed, true); break;
       case 'rw': if (remote) this.applyRewards(d.list, d.rows); break;
       case 'sync': if (remote) this.applySync(d); break;
@@ -334,6 +353,7 @@ class Board {
 
   /* ---------------- phase flow ---------------- */
   startTurnPlayer() {
+    if (this.won) return;
     const p = this.cur();
     this.showBanner('TURN ' + this.turn + '/' + this.maxTurns + ' — ' + p.name, p.color, 1.4);
     this.state = 'menu'; this.stateT = 0; this.botT = 1.2 + this.rng() * 0.8;
@@ -445,10 +465,15 @@ class Board {
         this.ctx.audio.sfx.crash();
       } else if (this.authority()) {
         if (victim.shield) { this.act('steal', { victim: victim.id, ci: -1 }); }
-        else if (victim.cosmetics.length) {
-          const ci = Math.floor(this.rng() * victim.cosmetics.length);
-          this.act('steal', { victim: victim.id, ci });
-        } else this.pop('💥 SPLAT! (' + victim.name + ' had nothing to steal)');
+        else {
+          // the ring-toss prize can't be lifted — it has to be WON
+          const takeable = victim.cosmetics
+            .map((c, i) => (cosmetic(c).prize ? -1 : i)).filter(i => i >= 0);
+          if (takeable.length) {
+            const ci = takeable[Math.floor(this.rng() * takeable.length)];
+            this.act('steal', { victim: victim.id, ci });
+          } else this.pop('💥 SPLAT! (' + victim.name + ' had nothing to steal)');
+        }
       }
     }
     p.pending = null;
@@ -492,7 +517,7 @@ class Board {
         if (this.authority()) {
           const roll = this.rng();
           const pool = roll < 0.6 ? 'common' : roll < 0.92 ? 'rare' : 'legendary';
-          const opts = COSMETICS.filter(c => c.tier === pool);
+          const opts = AWARDABLE.filter(c => c.tier === pool);
           const c = opts[Math.floor(this.rng() * opts.length)];
           this.act('pinataDrop', { c: c.id });   // routed through applyAct default? no — handle inline:
         }
@@ -510,6 +535,7 @@ class Board {
         this.ctx.audio.sfx.ui();
         break;
       }
+      case 'ringtoss': this.startRingToss(); break;
       case 'warp': {
         // human cannonball! blast off to the twin cannon across the park.
         // fully deterministic (fixed pairs) — every client animates the same.
@@ -553,6 +579,36 @@ class Board {
     this.carouselBet = null; this.carouselPending = false;
     this.endPlayerTurn(1.4);
   }
+  /* -------- 🎯 RING TOSS: the only source of the Giant Novelty Glasses --------
+     Landing here drags ALL FOUR players to the booth. One winner, one prize —
+     and it is the sole way that cosmetic ever enters the game, so the 🎯 space
+     is worth steering for. */
+  startRingToss() {
+    this.pendingMg = { gid: 'ringtoss', seed: (this.ctx.seed ^ (this.turn * 3313) ^ (this.playerIdx * 131)) >>> 0 };
+    this.mgLaunched = false;
+    this.ringPending = true;               // results award the prize, not coins
+    this.pop('🎯 RING TOSS — winner takes the 👓!', '#ffd23f', 24);
+    this.ctx.audio.sfx.ui();
+    this.state = 'mgIntro'; this.stateT = 0;
+  }
+  doRingPrize(winnerId) {
+    this.ringPending = false;
+    const win = this.players.find(p => p.id === winnerId);
+    if (!win) { this.endPlayerTurn(1.2); return; }
+    const c = cosmetic('glasses');
+    if (win.cosmetics.includes('glasses')) {      // already theirs — pay out instead
+      win.coins += 20;
+      this.showBanner('🎯 ' + win.name + ' keeps the 👓 — +20 🪙', win.color, 2.2);
+      this.ctx.audio.sfx.coin(8);
+    } else {
+      win.cosmetics.push('glasses');
+      this.showBanner('🎯 ' + win.name + ' WINS THE ' + c.icon + ' ' + c.name + '!', '#ffd23f', 2.6);
+      this.pop('👓 ' + c.name + ' (+' + c.value + 'pts)!', '#ffd23f', 26);
+      this.ctx.audio.sfx.win();
+      if (this.checkCollectionWin()) return;
+    }
+    this.endPlayerTurn(1.8);
+  }
   // piñata resolution comes through act stream for sync
   applyPinata(cid) {
     const p = this.cur(), c = cosmetic(cid);
@@ -570,7 +626,7 @@ class Board {
     p.coins -= 5;
     if (win) {
       const pool = this.rng() < 0.7 ? 'rare' : 'legendary';
-      const opts = COSMETICS.filter(c => c.tier === pool);
+      const opts = AWARDABLE.filter(c => c.tier === pool);
       const c = opts[Math.floor(this.rng() * opts.length)];
       p.cosmetics.push(c.id);
       this.pop('🎭 WIN! ' + c.icon + ' ' + c.name + ' (' + c.value + 'pts)!', '#ffd23f', 26);
@@ -587,19 +643,31 @@ class Board {
     this.botT = 1 + this.rng();
     this.ctx.audio.sfx.ui();
   }
+  /* Mystery Box pricing: every box a player buys makes the NEXT one dearer, and
+     nobody gets more than one per turn — so it can't be spammed into an instant
+     collection. Derived from synced player state, so every client agrees. */
+  mboxCost(p) { return ITEMS.mystery.cost + 15 * (p.mboxBought || 0); }
+  itemCost(p, k) { return k === 'mystery' ? this.mboxCost(p) : ITEMS[k].cost; }
+  mboxUsedThisTurn(p) { return p.mboxTurn === this.turn; }
+  canBuy(p, k) {
+    if (p.coins < this.itemCost(p, k)) return false;
+    return k === 'mystery' ? !this.mboxUsedThisTurn(p) : p.items.length < 3;
+  }
   doBuy(item) {
     const p = this.cur(), def = ITEMS[item];
     if (def.instant) {                          // Mystery Box: pops open right here
-      if (p.coins < def.cost) return;
-      p.coins -= def.cost;
+      if (!this.canBuy(p, item)) return;
+      p.coins -= this.mboxCost(p);
+      p.mboxBought = (p.mboxBought || 0) + 1;
+      p.mboxTurn = this.turn;
       this.ctx.audio.sfx.coin(6);
       if (this.authority()) {                   // buyer's client draws the prize
-        const c = COSMETICS[Math.floor(this.rng() * COSMETICS.length)];
+        const c = AWARDABLE[Math.floor(this.rng() * AWARDABLE.length)];
         this.act('mbox', { c: c.id });
       }
       return;
     }
-    if (p.coins < def.cost || p.items.length >= 3) return;
+    if (!this.canBuy(p, item)) return;
     p.coins -= def.cost; p.items.push(item);
     this.pop(def.icon + ' ' + def.name + ' bought!', '#a1e887');
     this.ctx.audio.sfx.coin(6);
@@ -611,9 +679,11 @@ class Board {
     else this.endPlayerTurn(0.8);
   }
   endPlayerTurn(delay) {
+    if (this.won) return;                 // the race is over — nothing advances
     this.state = 'turnEnd'; this.stateT = -(delay || 0.8);
   }
   nextPlayerOrMinigame() {
+    if (this.won) return;
     this.playerIdx++;
     if (this.playerIdx < this.players.length) { this.startTurnPlayer(); return; }
     // MINIGAME PHASE
@@ -634,11 +704,25 @@ class Board {
       this.netSend('mg', { gid, seed });
     }
   }
-  launchMg(gid, seed, remote) { this.pendingMg = { gid, seed }; if (this.state !== 'mgIntro') { this.state = 'mgIntro'; this.stateT = 0; } }
+  launchMg(gid, seed, remote) {
+    if (this.won) return;
+    this.pendingMg = { gid, seed };
+    if (this.state !== 'mgIntro') { this.state = 'mgIntro'; this.stateT = 0; }
+  }
 
   /* -------- the spec hook: minigame results → coins → next turn -------- */
   onMinigameComplete(resultsArray, gameId) {
     // the carousel isn't a normal round — its winner collects the ante pot
+    // the ring toss isn't a normal round either — its winner takes the 👓
+    if (gameId === 'ringtoss' && this.ringPending) {
+      this.mgLaunched = false; this.pendingMg = null;
+      if (this.authority()) {
+        const first = resultsArray.find(r => r.rank === 1) ||
+          [...resultsArray].sort((a, b) => b.score - a.score)[0];
+        this.act('ring', { winner: first ? first.playerId : null });
+      }
+      return;
+    }
     if (gameId === 'carousel' && this.carouselPending) {
       this.mgLaunched = false; this.pendingMg = null;
       const bet = this.carouselBet || 10;
@@ -664,6 +748,7 @@ class Board {
     // non-hosts wait for the 'rw' event (already handled in applyAct)
   }
   applyRewards(list, rows) {
+    if (this.won) return;
     this.rewardRows = rows.map(r => ({ ...r, coins: list[r.playerId] || 0 }));
     for (const pid in list) {
       const p = this.players.find(q => q.id === pid);
@@ -701,10 +786,12 @@ class Board {
       ps: this.players.map(p => ({
         id: p.id, node: p.node, coins: p.coins,
         cos: [...p.cosmetics], items: [...p.items], shield: !!p.shield,
+        mb: p.mboxBought || 0, mt: p.mboxTurn == null ? -1 : p.mboxTurn,
       })),
     };
   }
   applySync(d) {
+    if (this.won) return;        // a heartbeat must never resurrect a finished game
     const agree = d.turn === this.turn && d.playerIdx === this.playerIdx;
     if (agree) { this._syncBad = 0; return; }
     this._syncBad = (this._syncBad || 0) + 1;
@@ -720,6 +807,7 @@ class Board {
       if (!p) continue;
       p.node = row.node; p.coins = row.coins;
       p.cosmetics = [...row.cos]; p.items = [...row.items]; p.shield = row.shield;
+      if (row.mb != null) { p.mboxBought = row.mb; p.mboxTurn = row.mt; }
       p.ax = this.map[p.node].x; p.ay = this.map[p.node].y;
     }
     this.overlay = null; this.destOptions = null; this.forcedPath = null; this.dice = null;
@@ -990,7 +1078,8 @@ class Board {
         }
         break;
       }
-      case 'end': if (this.stateT > 3) this.finishGame(); break;
+      // the victory stage plays out before the results screen takes over
+      case 'end': if (this.stateT > 8.5) this.finishGame(); break;
     }
     // pinata2 act needs routing (added late to applyAct):
     this.clicks.length = 0;
@@ -1046,7 +1135,7 @@ class Board {
         o.dropped = true;
         const roll = this.rng();
         const pool = roll < 0.6 ? 'common' : roll < 0.92 ? 'rare' : 'legendary';
-        const opts = COSMETICS.filter(c => c.tier === pool);
+        const opts = AWARDABLE.filter(c => c.tier === pool);
         const c = opts[Math.floor(this.rng() * opts.length)];
         this.act('pinata2', { c: c.id });
       }
@@ -1068,7 +1157,7 @@ class Board {
     } else if (o.kind === 'shop') {
       if (p.bot && auth && (this.botT -= rdt) <= 0) {
         this.botT = 0.8 + this.rng() * 0.5;
-        const wants = Object.keys(ITEMS).filter(k => p.coins >= ITEMS[k].cost && (ITEMS[k].instant || p.items.length < 3));
+        const wants = Object.keys(ITEMS).filter(k => this.canBuy(p, k));
         if (wants.length && this.rng() < 0.55) this.act('buy', { item: wants[Math.floor(this.rng() * wants.length)] });
         else this.act('shopDone', {});
       } else if (this.myTurn()) {
@@ -1420,7 +1509,8 @@ class Board {
     this.drawPhaseUI(g, W, H);
     if (this.overlay) this.drawOverlay(g, W, H);
     // banner + pops
-    if (this.bannerT > 0 && this.banner) {
+    // the victory stage carries its own titles — don't stack a banner over them
+    if (this.bannerT > 0 && this.banner && this.state !== 'end') {
       g.globalAlpha = Math.min(1, this.bannerT * 2);
       g.font = '900 ' + Math.round(Math.min(30, W * 0.062)) + 'px system-ui'; g.textAlign = 'center';
       g.lineWidth = 5; g.strokeStyle = 'rgba(10,8,4,0.9)';
@@ -1461,6 +1551,7 @@ class Board {
         'forward, back, any route you like!',
         '🔵 +3 · 🔴 −3 · 🛒 shop · 🪅 cosmetics',
         '🌀 cannons BLAST you across the park',
+        '🎠 bet & ride · 🎯 ring toss for the 👓',
       ]],
       ['🕹️ MINIGAME EVERY ROUND', [
         'After everyone moves, a minigame!',
@@ -1817,9 +1908,147 @@ class Board {
     } else if (this.state === 'reward' && this.rewardRows) {
       this.drawPodium(g, W, H);
     } else if (this.state === 'end') {
-      g.font = '900 26px system-ui'; g.fillStyle = '#ffd23f';
-      g.fillText('🏁 COUNTING THE COLLECTION…', W / 2, H * 0.45);
+      this.drawVictory(g, W, H);
     }
+  }
+  /* THE VICTORY STAGE — curtains, a spotlight, the champion dancing on the
+     boards while everyone else stands in the dark and applauds. */
+  drawVictory(g, W, H) {
+    const champ = (this.won && this.players.find(p => p.id === this.won)) || this.rankOrder()[0];
+    if (!champ) return;
+    const others = this.players.filter(p => p !== champ);
+    const t = this.stateT;
+    const inF = clamp(t / 0.7, 0, 1);                 // curtains sweep in
+    const floorY = H * 0.72, sx = W / 2;
+    // ---- house: dark auditorium ----
+    const hall = g.createLinearGradient(0, 0, 0, H);
+    hall.addColorStop(0, '#0a0713'); hall.addColorStop(0.62, '#150c1e'); hall.addColorStop(1, '#0a0710');
+    g.fillStyle = hall; g.fillRect(0, 0, W, H);
+    // ---- stage floor: lacquered boards receding to the back wall ----
+    const back = H * 0.44;
+    const fl = g.createLinearGradient(0, back, 0, H);
+    fl.addColorStop(0, '#3a2416'); fl.addColorStop(0.45, '#6b4426'); fl.addColorStop(1, '#2a1a10');
+    g.fillStyle = fl; g.fillRect(0, back, W, H - back);
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1.5;
+    for (let i = -6; i <= 6; i++) {                   // perspective planks
+      g.beginPath(); g.moveTo(sx + i * W * 0.055, back); g.lineTo(sx + i * W * 0.34, H); g.stroke();
+    }
+    g.fillStyle = 'rgba(255,225,180,0.06)'; g.fillRect(0, back, W, 3);
+    // ---- spotlight cone from the rig down onto the champion ----
+    const swing = Math.sin(t * 1.1) * W * 0.012;
+    const cone = g.createLinearGradient(sx, 0, sx, floorY);
+    cone.addColorStop(0, 'rgba(255,244,200,0.30)'); cone.addColorStop(1, 'rgba(255,236,160,0.05)');
+    g.fillStyle = cone; g.globalAlpha = inF;
+    g.beginPath();
+    g.moveTo(sx - W * 0.05 + swing, 0); g.lineTo(sx + W * 0.05 + swing, 0);
+    g.lineTo(sx + W * 0.3 + swing, floorY); g.lineTo(sx - W * 0.3 + swing, floorY);
+    g.closePath(); g.fill();
+    const pool = g.createRadialGradient(sx + swing, floorY, 4, sx + swing, floorY, W * 0.34);
+    pool.addColorStop(0, 'rgba(255,244,200,0.55)'); pool.addColorStop(1, 'rgba(255,236,160,0)');
+    g.fillStyle = pool;
+    g.beginPath(); g.ellipse(sx + swing, floorY, W * 0.34, W * 0.12, 0, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+    // ---- the crowd: everyone else, in the dark, clapping ----
+    const base = Math.min(W, H * 0.62);
+    const oSc = base / 300;
+    others.forEach((p, i) => {
+      const side = i % 2 ? 1 : -1, tier = Math.floor(i / 2);
+      const ox = sx + side * (W * 0.26 + tier * W * 0.085);
+      const oy = floorY - 6 + tier * 12;
+      const clap = Math.abs(Math.sin(t * 7 + i * 1.3));       // hands meeting
+      g.globalAlpha = 0.42;                                   // they stand out of the light
+      drawDiverStand(g, {
+        x: ox, y: oy - 30 * oSc - clap * 3, scale: oSc, color: p.color, skin: p.skin,
+        ward: p.ward, cos: p.cosmetics, t: this.tt + i * 2.1, mood: 'cheer',
+      });
+      g.textAlign = 'center';
+      g.font = Math.round(13 * oSc) + 'px serif';
+      g.globalAlpha = 0.3 + clap * 0.5;
+      g.fillText('👏', ox + side * 12 * oSc, oy - 46 * oSc - clap * 5);
+      g.globalAlpha = 1;
+      g.font = '800 ' + Math.round(Math.min(13, W * 0.028)) + 'px system-ui';
+      g.fillStyle = 'rgba(150,160,190,0.85)';
+      g.fillText(p.name, ox, oy + 16);
+    });
+    // ---- the champion, dancing ----
+    const cSc = base / 165;
+    const beat = t * 5.4;
+    const hop = Math.abs(Math.sin(beat)) * 16 * cSc * 0.6;     // bouncing on the beat
+    const lean = Math.sin(beat / 2) * 0.22;                     // rocking side to side
+    const step = Math.sin(beat / 2) * W * 0.045;                // shuffling across the boards
+    g.fillStyle = 'rgba(0,0,0,0.4)';                            // shadow shrinks as he hops
+    g.beginPath();
+    g.ellipse(sx + step + swing, floorY + 4, 26 * cSc * 0.5 * (1 - hop / (26 * cSc)), 7 * cSc * 0.5, 0, 0, TAU);
+    g.fill();
+    g.save();
+    g.translate(sx + step + swing, floorY - hop);
+    g.rotate(lean);
+    drawDiverStand(g, {
+      x: 0, y: -30 * cSc, scale: cSc, color: champ.color, skin: champ.skin,
+      ward: champ.ward, cos: champ.cosmetics, t: this.tt, mood: 'cheer',
+    });
+    g.restore();
+    // sparkles thrown off the spotlight
+    for (let i = 0; i < 16; i++) {
+      const ph = frac(i * 17.3) * TAU + t * (1.2 + frac(i * 5.1));
+      const rr = W * (0.1 + frac(i * 9.7) * 0.22);
+      g.globalAlpha = 0.35 + 0.45 * Math.sin(ph * 2);
+      g.fillStyle = i % 3 ? '#ffd23f' : '#fff6d0';
+      const px2 = sx + swing + Math.cos(ph) * rr, py2 = floorY - 60 - Math.abs(Math.sin(ph)) * H * 0.22;
+      g.beginPath(); g.arc(px2, py2, 1.6 + frac(i * 3.3) * 2, 0, TAU); g.fill();
+    }
+    g.globalAlpha = 1;
+    // ---- curtains framing the stage ----
+    const cw2 = W * 0.115 * inF;
+    for (const sd of [-1, 1]) {
+      const x0 = sd < 0 ? 0 : W - cw2;
+      const cg = g.createLinearGradient(x0, 0, x0 + cw2, 0);
+      const stops = sd < 0 ? ['#5c0f1e', '#8e1b2f', '#3d0a15'] : ['#3d0a15', '#8e1b2f', '#5c0f1e'];
+      cg.addColorStop(0, stops[0]); cg.addColorStop(0.55, stops[1]); cg.addColorStop(1, stops[2]);
+      g.fillStyle = cg; g.fillRect(x0, 0, cw2, H);
+      g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = 2;
+      for (let i = 1; i < 5; i++) {
+        const fx2 = x0 + (cw2 / 5) * i;
+        g.beginPath(); g.moveTo(fx2, 0);
+        g.quadraticCurveTo(fx2 + Math.sin(i * 2.1) * 6, H / 2, fx2, H); g.stroke();
+      }
+    }
+    // pelmet across the top
+    g.fillStyle = '#8e1b2f'; g.fillRect(0, 0, W, H * 0.055 * inF);
+    g.fillStyle = '#5c0f1e';
+    for (let i = 0; i * 40 < W; i++) {
+      g.beginPath(); g.arc(i * 40 + 20, H * 0.055 * inF, 20, 0, Math.PI); g.fill();
+    }
+    // ---- the caption ----
+    const title = this.won ? '🎁 COLLECTED THEM ALL!' : '🏁 FINAL CURTAIN';
+    g.textAlign = 'center';
+    g.font = '900 ' + Math.round(Math.min(28, W * 0.062)) + 'px system-ui';
+    g.lineWidth = 6; g.strokeStyle = 'rgba(8,6,14,0.92)';
+    g.strokeText(title, W / 2, H * 0.135); g.fillStyle = '#ffd23f';
+    g.fillText(title, W / 2, H * 0.135);
+    const pulse = 1 + Math.sin(t * 5) * 0.04;
+    g.save(); g.translate(W / 2, H * 0.2); g.scale(pulse, pulse);
+    g.font = '900 ' + Math.round(Math.min(38, W * 0.085)) + 'px system-ui';
+    g.lineWidth = 7; g.strokeStyle = 'rgba(8,6,14,0.92)';
+    g.strokeText(champ.name + ' WINS!', 0, 0);
+    g.fillStyle = champ.color; g.fillText(champ.name + ' WINS!', 0, 0);
+    g.restore();
+    g.font = '800 ' + Math.round(Math.min(15, W * 0.034)) + 'px system-ui';
+    g.fillStyle = '#ffeccf';
+    g.fillText('🎁 ' + this.setCount(champ) + '/' + COSMETICS.length + ' cosmetics  ·  ' +
+      this.score(champ) + ' pts', W / 2, H * 0.245);
+    // final standings along the apron, so everyone can see how it finished
+    const ranked = this.rankOrder();
+    const sy = Math.min(H - 24 - ranked.length * 20, H * 0.845);
+    g.font = '800 ' + Math.round(Math.min(12, W * 0.026)) + 'px system-ui';
+    g.fillStyle = 'rgba(255,255,255,0.55)';
+    g.fillText('FINAL STANDINGS', W / 2, sy - 8);
+    g.font = '800 ' + Math.round(Math.min(14, W * 0.031)) + 'px system-ui';
+    ranked.forEach((p, i) => {
+      g.fillStyle = p === champ ? '#ffd23f' : 'rgba(190,198,220,0.9)';
+      g.fillText((i + 1) + '. ' + p.name + '  —  🎁' + this.setCount(p) + '/' + COSMETICS.length +
+        '  ·  ' + this.score(p) + ' pts', W / 2, sy + 14 + i * 20);
+    });
   }
   /* post-minigame PODIUM: a full-screen 2x2 — winner spotlit and jumping,
      losers shadowed and frowning, dead last sheds a single tear */
@@ -2031,12 +2260,16 @@ class Board {
       g.fillText(p.name + ' · ' + p.coins + '🪙 · ' + p.items.length + '/3 cards', W / 2, by + 48);
       let yy = by + 66;
       for (const k in ITEMS) {
-        const it = ITEMS[k], can = p.coins >= it.cost && p.items.length < 3;
-        if (mine) this.addButton(g, 'buy' + k, it.icon + ' ' + it.cost + '🪙', bx + 12, yy, 92, 34, can);
+        const it = ITEMS[k], cost = this.itemCost(p, k), can = this.canBuy(p, k);
+        if (mine) this.addButton(g, 'buy' + k, it.icon + ' ' + cost + '🪙', bx + 12, yy, 92, 34, can);
         g.textAlign = 'left'; g.font = '800 13px system-ui'; g.fillStyle = '#ffeccf';
         g.fillText(it.name, bx + 114, yy + 14);
         g.font = '700 10.5px system-ui'; g.fillStyle = '#93a0bd';
-        this.wrap(g, it.desc, bx + 114, yy + 27, bw - 126, 12);
+        // the box tells you why it's locked and what the next one will run you
+        const note = k !== 'mystery' ? it.desc
+          : this.mboxUsedThisTurn(p) ? 'Already opened one this turn — the stall reopens next turn.'
+            : it.desc + ' Limit 1 per turn; next one costs ' + (cost + 15) + '🪙.';
+        this.wrap(g, note, bx + 114, yy + 27, bw - 126, 12);
         yy += 58;
       }
       if (mine) this.addButton(g, 'close', o.passing ? 'KEEP MOVING ▶' : 'DONE ▶', W / 2 - 80, by + bh - 44, 160, 36);

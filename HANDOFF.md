@@ -22,6 +22,69 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 39) — win actually ends, victory stage, ring toss
+Four asks in one round. Build 42.
+
+### 1. "It said I won but didn't end the game"
+- Root cause: `checkCollectionWin()` set `state = 'end'`, but the code that
+  AWARDS the cosmetic keeps running after it — and `doMascot()` ends with an
+  unconditional `endPlayerTurn(1.2)`, which overwrote 'end' with 'turnEnd'.
+  Banner showed, game carried on. (pinata/mbox/steal happened to survive
+  because their callers stop touching state once `overlay` is nulled.)
+- Fix is a LATCH, not a patch of that one line: `this.won = <player id>`, and
+  every turn-advancing entry point returns early on it —
+  `endPlayerTurn`, `startTurnPlayer`, `nextPlayerOrMinigame`, `launchMg`,
+  `applyRewards`, `applySync` (a host heartbeat must not resurrect a finished
+  game). Paths added later inherit the protection.
+- Verified on ALL five award paths (mascot, piñata, mystery box, ring toss,
+  steal): state latches 'end', playerIdx doesn't advance, results fire at 8.5s.
+
+### 2. Victory stage (`drawVictory`)
+- Replaces the "COUNTING THE COLLECTION…" placeholder. Curtains sweep in, a
+  swinging spotlight cone + floor pool, champion dancing centre stage (bob on
+  the beat, rocking lean, shuffling step, shrinking shadow), everyone else in
+  the dark at 42% alpha with a 👏 that pulses on their clap cycle, sparkles,
+  pelmet, and FINAL STANDINGS on the apron. 'end' now holds 8.5s (was 3).
+- Also fires on the TURN-LIMIT finish, where `won` is null → title reads
+  "🏁 FINAL CURTAIN" and the champion is `rankOrder()[0]`.
+- The board banner is suppressed during 'end' — it was stacking on the title.
+
+### 3. Mystery Box economy
+- `mboxCost(p) = 25 + 15 * p.mboxBought` → 25/40/55/70/85…, and ONE per turn
+  (`p.mboxTurn === this.turn`). Both fields are in `syncPayload`/`applySync`
+  (as `mb`/`mt`) so every client prices it identically.
+- `canBuy(p,k)` / `itemCost(p,k)` are the single source of truth — shop UI, bot
+  shopping and `doBuy` all go through them. Shop row explains the limit and
+  quotes the next price.
+
+### 4. 🎯 Ring Toss (`games/ringtoss.js`) + the 9th cosmetic
+- New node 37 `ringtoss` at (50,52); edges 4→37→27 (node 4 became a fork, so
+  it's a fifth branch and a genuine shortcut into the left midway). Min node
+  spacing still 9.22 (unchanged pair 9-36), all 38 nodes reachable. Central
+  'carousel' decor moved to (61,45) to clear the alley.
+- COSMETICS gained `glasses` (Giant Novelty Glasses, 75 pts, `tier:'prize'`).
+  `AWARDABLE = COSMETICS.filter(c => !c.prize)` now feeds piñata / mascot /
+  mystery box, and `doSteal` filters prize items out of the takeable list — the
+  ring toss is the ONLY source. Verified: 300 mystery boxes never produced it.
+- Board flow mirrors the carousel: `startRingToss()` → mgIntro with
+  `ringPending`, results intercepted in `onMinigameComplete`, winner awarded via
+  act `'ring'` → `doRingPrize`. Winner who ALREADY owns it gets +20🪙 instead
+  (no duplicate), so repeat visits stay meaningful and someone else can win it.
+- The game: two timed taps per ring — sweep the AIM marker, then stop the POWER
+  scale. Power = reach; `scatter(pw) = 0.012 + pw²*0.085`, drawn live as a
+  widening cone, so the 5pt gold bottle at the back is a real gamble. 6 rings
+  each, own rack per player, ringed bottles spend. Bots aim at a chosen bottle
+  with skill-scaled tolerance (score 4-8); careful human play ~7, greedy
+  back-row play 11-14.
+- Standalone-playable: `SPACE_GAMES = ['carousel','ringtoss']` are excluded from
+  `DECK_GAMES` (never in the random rotation) but both are listed in MODES.
+- `drawGiantGlasses` added to character.js (oversized tinted lenses + temple
+  arms), drawn after the nose, under hair/hats.
+
+Verified end-to-end: a 25-turn four-bot game ran clean, hit the ring toss twice
+organically (two different winners), bought 0-2 mystery boxes each, and finished
+on the turn limit with the stage.
+
 ## Session 2026-08-28 (round 38) — Grid N' Greed banked you after one tile
 - Sam: "it makes me bank my money automatically after just picking 1 tile, but
   I should be able to keep going then bank when i want."
