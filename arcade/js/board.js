@@ -4,7 +4,7 @@
 // squash steals, shops, piñatas, mascot gambles — and a minigame every turn.
 // FinalScore = coins + Σ cosmetic values. Turn-based → clean event sync online.
 import { TAU, clamp, lerp, mulberry32 } from './util.js';
-import { drawDiverTop, drawDiverStand } from './character.js?v=39';
+import { drawDiverTop, drawDiverStand } from './character.js?v=40';
 
 function lightCol(hex, f) {   // mix toward white by f
   try {
@@ -122,6 +122,11 @@ const NODE_STYLE = {
   carousel: ['#e08bd0', '🎠'],
 };
 const BET_WHEEL = [5, 10, 15, 20, 25, 30];   // the wheel's coin wedges
+// states where tapping a diver on the board opens his collection card: the world
+// is on screen, and nothing else is claiming raw board taps or covering it
+const PAWN_TAP_OK = {
+  splash: 1, menu: 1, preroll: 1, dicing: 1, stepping: 1, warping: 1, action: 1, turnEnd: 1,
+};
 const PREV_COLS = ['#ffd23f', '#59d9ff', '#e08bd0'];   // branch-choice colors: button ↔ path ↔ pin
 
 /* ================================================================ */
@@ -144,6 +149,7 @@ class Board {
     this.moveQ = []; this.moveT = 0; this.stepFrom = null; this.overlay = null;
     this.botT = 0; this.dice = null; this.paused = false;
     this.clicks = [];
+    this.panel = null; this.pawnHits = []; this.buttons = []; this._eatAct = 0;
     // free-look zoom: pinch on touch, ctrl/⌘+click or wheel on desktop.
     // userZoom multiplies the state's target zoom; 1 = default framing.
     this.userZoom = 1; this._pts = new Map(); this._pinch0 = null;
@@ -793,25 +799,37 @@ class Board {
     const p = this.cur ? this.cur() : null;
     const auth = this.authority();
     const clicks = this.clicks; // consumed per state below
+    // a tap consumed by the HUD must not ALSO register as inp.act further down,
+    // or opening a panel on your own turn silently rolls the dice
+    this._eatAct = Math.max(0, this._eatAct - rdt);
     // MAP toggle works in ANY state (a corner button is always on screen)
     if (this.tut == null && clicks.length) {
       const mh = this.hitButton(clicks);
       if (mh && mh.id === 'mapAny') {
         this.mapView = !this.mapView; this.ctx.audio.sfx.ui();
-        clicks.length = 0;
+        clicks.length = 0; this._eatAct = 0.4;
       }
     }
     /* COLLECTION PANEL — a purely local info card (kept off this.overlay so it
-       never gates the state machine or anyone else's turn). Tap a score card
-       to open it, tap anywhere to close; taps never fall through to the board. */
+       never gates the state machine or anyone else's turn). Tap a score card OR
+       a diver on the board to open it, tap anywhere to close; taps never fall
+       through to the board. */
     if (this.tut == null && clicks.length) {
       if (this.panel) {
-        this.panel = null; this.ctx.audio.sfx.ui(); clicks.length = 0;
+        this.panel = null; this.ctx.audio.sfx.ui();
+        clicks.length = 0; this._eatAct = 0.4;
       } else {
         const ch2 = this.hitButton(clicks);
-        if (ch2 && ch2.id.startsWith('chip')) {
-          this.panel = { kind: 'collection', who: +ch2.id.slice(4), t: 0 };
-          this.ctx.audio.sfx.ui(); clicks.length = 0;
+        let who = ch2 && ch2.id.startsWith('chip') ? +ch2.id.slice(4) : -1;
+        // tapping the diver himself does the same thing — but only in the states
+        // where the board is what you're actually looking at. Allowlisted, so it
+        // can never steal a route (branch), a landing choice (pickDest), or a
+        // tap meant for the podium / minigame card drawn over the world.
+        if (who < 0 && !ch2 && !this.overlay && PAWN_TAP_OK[this.state])
+          who = this.hitPawn(clicks);
+        if (who >= 0) {
+          this.panel = { kind: 'collection', who, t: 0 };
+          this.ctx.audio.sfx.ui(); clicks.length = 0; this._eatAct = 0.4;
         }
       }
     }
@@ -837,7 +855,7 @@ class Board {
             if (hit.id === 'roll' && !this.mapView) this.rollNow();
             else if (hit.id === 'items') { this.overlay = { kind: 'items', t: 0 }; this.ctx.audio.sfx.ui(); }
             else if (hit.id === 'map') { this.mapView = !this.mapView; this.ctx.audio.sfx.ui(); }
-          } else if (inp.act && !this.mapView) this.rollNow();
+          } else if (inp.act && !this.mapView && !this._eatAct && !this.panel) this.rollNow();
         }
         break;
       }
@@ -1069,6 +1087,17 @@ class Board {
         if (cx2 >= b.x && cx2 <= b.x + b.w && cy2 >= b.y && cy2 <= b.y + b.h) return b;
     return null;
   }
+  // which diver did that tap land on? back-to-front, so the one drawn in front wins.
+  // Only consulted in PAWN_TAP_OK states — see the collection-panel block in update().
+  hitPawn(clicks) {
+    if (!clicks.length || !this.pawnHits) return -1;
+    for (const [cx2, cy2] of clicks)
+      for (let k = this.pawnHits.length; k--;) {
+        const b = this.pawnHits[k];
+        if (cx2 >= b.x && cx2 <= b.x + b.w && cy2 >= b.y && cy2 <= b.y + b.h) return b.i;
+      }
+    return -1;
+  }
   proj(x, y) {
     const { W, H } = this.ctx.dim, Z = this.zoom || 10;
     return [W / 2 + (x - this.camX) * Z, H * 0.42 + (y - this.camY) * Z * 0.62];
@@ -1269,6 +1298,7 @@ class Board {
       items.push({ py: py2 + 0.1 + i * 0.01, kind: 'player', p, i, px: px2 });
     });
     items.sort((a, b) => a.py - b.py);
+    this.pawnHits = [];            // rebuilt every frame by drawStanding
     for (const it of items) {
       if (it.kind === 'tile') this.drawTile(g, it.n, it.px, it.py, Z);
       else if (it.kind === 'decor') this.drawDecor(g, it.dc, it.px, it.py, Z);
@@ -1600,6 +1630,15 @@ class Board {
     const active = this.playerIdx === i && this.state !== 'splash' && this.state !== 'end';
     const sc = Z * 0.105 * (active ? 1.18 : 1);
     const isMover = active && p === this.cur();
+    // tap target for the collection panel — generous enough for a thumb even
+    // when the board is zoomed way out, but narrowed to the fan spacing when
+    // divers share a tile so each one owns its own column instead of swallowing
+    // its neighbour. Pushed in draw order: a diver in front wins the tap.
+    const hw = Math.max(17, Z * (mates.length > 1 ? 1.2 : 2.3));
+    this.pawnHits.push({
+      i, x: px + ox2 - hw, y: py - Z * 7.4,
+      w: hw * 2, h: Math.max(38, Z * 8.6),
+    });
     // mid-hop: shadow shrinks under the airborne diver (goofy physics sells the jump)
     const hopping = isMover && this.state === 'stepping';
     const hopF = hopping ? Math.sin(Math.min(1, this.moveT / 0.34) * Math.PI) : 0;

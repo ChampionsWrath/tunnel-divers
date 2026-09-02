@@ -22,6 +22,32 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (round 37) — tap a diver to see his collection
+- Same collection card as the score chips, now opened by tapping the DIVER on
+  the board. `drawStanding` pushes a per-frame rect into `this.pawnHits`
+  (rebuilt in render() right before the depth-sorted draw loop); `hitPawn()`
+  scans it BACK TO FRONT so the diver drawn in front wins an overlapping tap.
+- Hit box is Z*2.3 wide normally, narrowed to Z*1.2 when divers share a tile —
+  that's exactly the fan spacing (Z*2.4), so each one owns its own column
+  instead of swallowing its neighbour. Floor of 17px/38px for thumbs at low
+  zoom.
+- Gated by `PAWN_TAP_OK` (splash/menu/preroll/dicing/stepping/warping/action/
+  turnEnd) plus `!this.overlay`. An ALLOWLIST on purpose: branch and pickDest
+  read raw board taps to choose a route/landing, and reward (podium) + mgIntro
+  draw full-screen cards over a still-live world, so a blocklist would rot the
+  moment a state is added.
+- **Fixed a real build-38 bug found on the way**: taps are read twice — board
+  `clicks` AND `ctx.input().act` — so consuming a click for the panel or the
+  map button still left `inp.act` true, and `case 'menu'` rolled the dice.
+  Added `this._eatAct` (0.4s, ticked down in update) set at every HUD-consume
+  site, and `menu` now requires `!this._eatAct && !this.panel` before an
+  act-tap rolls. Tapping a chip on your own turn no longer rolls for you.
+- Verified: every diver's centre resolves to itself, boxes tile with no
+  overlap (269/322/375/428 @ w53), panel opens for the tapped diver, board
+  keeps running, no roll fires, and it stays shut in reward / branch / under an
+  overlay. 10-turn 4-bot game runs to a clean finish.
+- Build 40.
+
 ## Session 2026-08-28 (round 36) — carousel timing window made visible
 - Sam: "hard to tell where im supposed to click... visuals make it look like I
   should press it when the presses fall into the colored rectangles but its
