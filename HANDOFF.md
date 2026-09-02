@@ -22,6 +22,37 @@
   HOME RUN 120m / OUT OF THE PARK 300m / 🚀 SPACE 800m (sky→starfield).
 - imports ?v=5. Deployed.
 
+## Session 2026-08-28 (rounds 31-33) — cache-proofing + carousel art pass
+- **CACHE WAS THE "it's not there" BUG.** GitHub Pages serves index.html and
+  main.js with Cache-Control: max-age=600 (verified via curl -I); phones and
+  laptops held them far longer, so Sam saw build 32 while 34 was live. TWO
+  layers now:
+  1. `arcade/version.json` + a BOOTSTRAP in index.html: fetches version.json
+     with cache:'no-store' then `import('./js/main.js?v=' + build)`. Stale
+     HTML can no longer serve stale JS.
+  2. In-app UPDATE BANNER (main.js checkForUpdate, on load + every 90s):
+     compares live version.json to BUILD; if newer, a blue bar appears —
+     tapping reloads at `?v=<live>` which bypasses the cache.
+  ⚠ KEEP version.json IN STEP WITH `const BUILD` ON EVERY DEPLOY.
+  ⚠ When polling Pages for a deploy, grep precisely — GitHub's 404 page
+    contains stray digits and gave a false "live" reading once.
+- **Carousel art pass (build 36)**: full rebuild of the scene.
+  * Canopy: ELLIPSE-clipped dome with fan stripes from an apex above the
+    dome (the first attempt used arc(radius W/2) which drew off-screen —
+    don't do that), round shading gradient, gold edge, scalloped valance,
+    rim bulbs, crown finial + waving pennant.
+  * Column: mirrored gilt panels; back-half riders draw BEFORE it, near-half
+    after (depth = sin(angle)).
+  * Platform: elliptical deck, radial planks clipped + rotating with spin,
+    gold trim, twinkling rim lights.
+  * Poles: brass gradient + animated helical glint, canopy → deck.
+  * drawHorse rewritten: arched neck/crest, muzzle+nostril+ear+eye, carved
+    scalloped mane & forelock in the rider's colour, S-curve tail, prancing
+    legs (far legs shaded behind body), saddle w/ pommel+stirrup, blanket
+    with gold studs, bridle + reins, rosettes. `dir` mirrors for the far side.
+  * HUD moved to the dark corners beside the dome (was overlapping the deck).
+- Build 36 live. Screenshot sent to Sam.
+
 ## Session 2026-08-28 (round 30) — 🎠 MERRY-GO-ROUND (new space + minigame)
 - **Board**: node 30 type 'carousel' (NODE_STYLE cyan-pink 🎠). nodeAction →
   overlay {kind:'wheel'} → spin (rdt*7) until the lander taps (bots use botT);
